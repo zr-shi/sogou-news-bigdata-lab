@@ -1,0 +1,12 @@
+FROM maven:3.9.9-eclipse-temurin-8 AS builder
+WORKDIR /build
+COPY docker/flink-job/pom.xml .
+RUN mvn -B -DskipTests dependency:go-offline
+COPY src/main/java/com/bigdata/flink/config/GlobalConfig.java src/main/java/com/bigdata/flink/config/GlobalConfig.java
+COPY src/main/java/com/bigdata/flink/sink/MySQLSink.java src/main/java/com/bigdata/flink/sink/MySQLSink.java
+COPY src/main/java/com/bigdata/flink/sink/MySQLSink2.java src/main/java/com/bigdata/flink/sink/MySQLSink2.java
+COPY src/main/java/com/bigdata/flink/stream/KafkaFlinkMySQL.java src/main/java/com/bigdata/flink/stream/KafkaFlinkMySQL.java
+RUN mvn -B -DskipTests package
+
+FROM flink:1.13.6-scala_2.11-java8
+COPY --from=builder /build/target/news-flink-job.jar /opt/flink/usrlib/news-analysis.jar

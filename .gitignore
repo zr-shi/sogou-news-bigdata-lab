@@ -1,0 +1,47 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.jks
+
+# User data
+data/*
+!data/README.md
+*.log
+*.csv
+*.xlsx
+*.sql.gz
+
+# Build and IDE files
+target/
+**/__pycache__/
+**/.venv*/
+.idea/
+.vscode/
+.docx-media/
+.docx-render/
+frontend/
+dependency-reduced-pom.xml
+README-Docker.md
+pom.xml
+
+# Legacy modules are not part of the published Docker demo
+src/main/java/com/bigdata/ai/
+src/main/java/com/bigdata/hbase/
+src/main/java/com/bigdata/mapreduce/
+src/main/java/com/bigdata/spark/
+src/main/java/com/bigdata/zookeeper/
+src/main/scala/
+src/test/
+src/main/resource/
+src/main/java/com/bigdata/App.java
+src/main/java/com/bigdata/flink/batch/
+src/main/java/com/bigdata/flink/entity/
+src/main/java/com/bigdata/flink/function/
+src/main/java/com/bigdata/flink/producer/
+src/main/java/com/bigdata/flink/util/
+src/main/java/com/bigdata/flink/sink/AuditMySQLSink.java
+src/main/java/com/bigdata/flink/stream/LiveAuditReport.java

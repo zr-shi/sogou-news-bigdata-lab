@@ -1,0 +1,10 @@
+target
+frontend
+.idea
+.vscode
+.git
+.docx-render
+.docx-media
+**/node_modules
+**/__pycache__
+**/.venv*
