@@ -120,6 +120,8 @@ services:
     build: ./docker/producer
     container_name: news-log-producer
     depends_on:
+      mysql:
+        condition: service_healthy
       kafka:
         condition: service_healthy
     environment:
@@ -128,9 +130,18 @@ services:
       PRODUCER_INTERVAL_SECONDS: ${PRODUCER_INTERVAL_SECONDS:-0.5}
       PRODUCER_DYNAMIC_TITLES: ${PRODUCER_DYNAMIC_TITLES:-true}
       PRODUCER_UNIQUE_EVERY: ${PRODUCER_UNIQUE_EVERY:-5}
-      PRODUCER_TOPIC_POOL_SIZE: ${PRODUCER_TOPIC_POOL_SIZE:-200}
+      PRODUCER_TOPIC_POOL_SIZE: ${PRODUCER_TOPIC_POOL_SIZE:-0}
       PRODUCER_INCLUDE_RUN_LABEL: ${PRODUCER_INCLUDE_RUN_LABEL:-true}
       PRODUCER_RUN_LABEL: ${PRODUCER_RUN_LABEL:-}
+      PRODUCER_CONTROL_ENABLED: ${PRODUCER_CONTROL_ENABLED:-true}
+      PRODUCER_START_ENABLED: ${PRODUCER_START_ENABLED:-false}
+      PRODUCER_CONTROL_POLL_SECONDS: ${PRODUCER_CONTROL_POLL_SECONDS:-2}
+      PRODUCER_CONTROL_TABLE: ${PRODUCER_CONTROL_TABLE:-producer_control}
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-news}
+      DB_USER: ${DB_USER:-hive}
+      DB_PASSWORD: ${DB_PASSWORD:-bigdata123}
       SOURCE_FILE: /data/sougou.log
     volumes:
       - ./data:/data:ro

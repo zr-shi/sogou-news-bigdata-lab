@@ -301,6 +301,51 @@ def ensure_runtime_tables(host: str, port: int, db: str, user: str, password: st
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """
             )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS producer_control (
+                  control_key VARCHAR(64) NOT NULL,
+                  control_value VARCHAR(255) NOT NULL,
+                  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                  PRIMARY KEY (control_key)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """
+            )
+            cur.execute(
+                """
+                INSERT IGNORE INTO producer_control(control_key, control_value)
+                VALUES ('generation_enabled', '0')
+                """
+            )
+
+
+def set_generation_enabled(host: str, port: int, db: str, user: str, password: str, enabled: bool) -> None:
+    ensure_runtime_tables(host, port, db, user, password)
+    with mysql_conn(host, port, db, user, password) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO producer_control(control_key, control_value)
+                VALUES ('generation_enabled', %s)
+                ON DUPLICATE KEY UPDATE control_value = VALUES(control_value)
+                """,
+                ("1" if enabled else "0",),
+            )
+
+
+def get_generation_enabled(host: str, port: int, db: str, user: str, password: str) -> bool:
+    ensure_runtime_tables(host, port, db, user, password)
+    with mysql_conn(host, port, db, user, password) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT control_value FROM producer_control
+                WHERE control_key = 'generation_enabled'
+                """
+            )
+            row = cur.fetchone()
+    value = str(row[0]).strip().lower() if row else "0"
+    return value in {"1", "true", "yes", "on", "start", "running"}
 
 
 def seed_demo_data(host: str, port: int, db: str, user: str, password: str, reset: bool = False) -> tuple[int, int]:
@@ -536,6 +581,7 @@ def render_system_status(
     news_table: str,
     period_table: str,
     using_mock: bool,
+    generation_enabled: Optional[bool],
 ) -> None:
     st.subheader("系统状态")
     st.caption("这个页面只读取 MySQL 结果表，不直接执行 Docker 或宿主机命令，适合给普通使用者做链路自检。")
@@ -562,23 +608,29 @@ def render_system_status(
     if period_time and period_time in df_period.columns and not df_period.empty:
         latest_period = str(df_period[period_time].astype(str).max())
 
+    generation_state = "未知"
+    if generation_enabled is True:
+        generation_state = "正在生成"
+    elif generation_enabled is False:
+        generation_state = "已暂停"
+
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("数据状态", data_state)
-    c2.metric("新闻标题行数", f"{news_rows:,}")
-    c3.metric("时段窗口行数", f"{period_rows:,}")
+    c2.metric("生成开关", generation_state)
+    c3.metric("新闻标题行数", f"{news_rows:,}")
     c4.metric("最近时段", latest_period)
 
     c5, c6, c7, c8 = st.columns(4)
     c5.metric("新闻累计点击", f"{news_total:,}")
     c6.metric("时段累计点击", f"{period_total:,}")
-    c7.metric("新闻表", news_table)
-    c8.metric("时段表", period_table)
+    c7.metric("时段窗口行数", f"{period_rows:,}")
+    c8.metric("结果表", f"{news_table} / {period_table}")
 
     st.info(data_help)
 
     st.markdown("#### 当前 Docker 快速版链路")
     st.code(
-        "log-producer -> Kafka(news-kafka) -> Flink(KafkaFlinkMySQL) -> MySQL(newscount/periodcount) -> Streamlit dashboard",
+        "Dashboard 启动按钮 -> MySQL(producer_control) -> log-producer -> Kafka(news-kafka) -> Flink(KafkaFlinkMySQL) -> MySQL(newscount/periodcount) -> Streamlit dashboard",
         language="text",
     )
 
@@ -2341,8 +2393,11 @@ def main():
         st.divider()
         st.subheader("\u7cfb\u7edf\u542f\u52a8\u4e0e\u8865\u6570")
         st.caption("\u811a\u672c\u542f\u52a8\u6574\u5957 Docker \u670d\u52a1\uff1b\u524d\u7aef\u6309\u94ae\u7528\u4e8e\u6570\u636e\u5e93\u4e3a\u7a7a\u65f6\u5feb\u901f\u5199\u5165\u6f14\u793a\u6570\u636e\u3002")
+        start_generation_clicked = st.button("\u542f\u52a8\u5b9e\u65f6\u751f\u6210", use_container_width=True)
+        pause_generation_clicked = st.button("\u6682\u505c\u5b9e\u65f6\u751f\u6210", use_container_width=True)
         seed_clicked = st.button("\u8865\u5145\u6f14\u793a\u6570\u636e", use_container_width=True)
         reset_seed_clicked = st.button("\u6e05\u7a7a\u5e76\u91cd\u7f6e\u6f14\u793a\u6570\u636e", use_container_width=True)
+        st.caption("\u542f\u52a8/\u6682\u505c\u6309\u94ae\u53ea\u5199\u5165 MySQL \u63a7\u5236\u8868\uff0cproducer \u8bfb\u5230\u5f00\u5173\u540e\u624d\u4f1a\u5411 Kafka \u53d1\u9001\u65b0\u65e5\u5fd7\u3002")
         st.code("powershell -ExecutionPolicy Bypass -File scripts\\start.ps1", language="powershell")
 
     qp_view = st.query_params.get("view", realtime_view)
@@ -2363,7 +2418,16 @@ def main():
     mock_reason = ""
     dropped_news = 0
     dropped_period = 0
+    generation_enabled = None
     try:
+        ensure_runtime_tables(host, int(port), db, user, password)
+        if start_generation_clicked or pause_generation_clicked:
+            generation_enabled = bool(start_generation_clicked)
+            set_generation_enabled(host, int(port), db, user, password, generation_enabled)
+            st.success("\u5df2\u542f\u52a8\u5b9e\u65f6\u751f\u6210\u3002" if generation_enabled else "\u5df2\u6682\u505c\u5b9e\u65f6\u751f\u6210\u3002")
+
+        generation_enabled = get_generation_enabled(host, int(port), db, user, password)
+
         if seed_clicked or reset_seed_clicked:
             news_rows, period_rows = seed_demo_data(host, int(port), db, user, password, reset=reset_seed_clicked)
             st.success(f"\u5df2\u5199\u5165\u6f14\u793a\u6570\u636e\uff1a\u65b0\u95fb {news_rows} \u6761\uff0c\u65f6\u6bb5 {period_rows} \u6761\u3002")
@@ -2428,7 +2492,7 @@ def main():
 
     if current_view == status_view:
         st.markdown(f"### {status_view}")
-        render_system_status(df_news, df_period, news_table, period_table, using_mock)
+        render_system_status(df_news, df_period, news_table, period_table, using_mock, generation_enabled)
     elif current_view == realtime_view:
         st.markdown(f"### {realtime_view}")
         render_realtime(df_news, df_period)
