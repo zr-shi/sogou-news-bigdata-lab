@@ -13,10 +13,47 @@
 - 新闻实时点击榜与趋势大屏
 - Kafka/Flink 实时写入 MySQL
 - 新闻标题聚合、时段窗口统计
+- 系统状态页，辅助判断数据链路是否正在写入
 - 增强可视化、数据预测、异常预警、热点聚类、关联规则
 - 数据库为空时自动补充演示数据
 - 前端提供“补充演示数据”和“清空并重置演示数据”按钮
 - 可选大模型洞察模块，API Key 只放在本地 `.env`
+
+## 原始流程与 Docker 快速流程
+
+课程或虚拟机环境中的原始流程通常是：
+
+```text
+sougou.sh
+  -> hadoop1 Flume taildir 采集
+  -> hadoop2/hadoop3 Flume Avro 聚合
+  -> Kafka 集群
+  -> IDEA/Flink 实时程序
+  -> MySQL(newscount, periodcount)
+  -> streamlit run app.py
+```
+
+本仓库默认提供的是 Docker 快速版：
+
+```text
+log-producer
+  -> Kafka(news-kafka)
+  -> Flink(KafkaFlinkMySQL)
+  -> MySQL(news-mysql)
+  -> Streamlit(news-dashboard)
+```
+
+两者的对应关系：
+
+| 原始虚拟机流程 | Docker 快速版 |
+| --- | --- |
+| `sougou.sh` 写入日志目录 | `log-producer` 生成或回放日志 |
+| hadoop1 Flume taildir 采集 | 快速版暂用 `log-producer` 简化替代 |
+| hadoop2/hadoop3 Flume 聚合到 Kafka | 快速版暂用 `log-producer` 直接写 Kafka |
+| IDEA 中手动启动 Flink 程序 | `flink-job` 容器自动提交 `KafkaFlinkMySQL` |
+| 手动 `streamlit run app.py` | `dashboard` 容器自动启动 Streamlit |
+
+这样设计是为了让别人能先一键跑通。如果需要完整展示 Flume 三节点采集/聚合链路，建议后续增加可选的 `docker-compose.flume.yml`，不要替换当前快速版。
 
 ## 电脑要求
 
@@ -127,6 +164,17 @@ AUTO_SEED_ON_EMPTY=false
 首页的“不同新闻标题数”来自 MySQL 的 `newscount` 聚合表，表示当前不同新闻标题的数量。
 
 “新闻表累计点击量”和“时段表累计点击量”来自 Flink 写入 MySQL 后的统计结果。
+
+## 系统状态页
+
+前端导航里的“系统状态”页面用于快速判断链路是否正常：
+
+- `新闻标题行数`：来自 `newscount`。
+- `时段窗口行数`：来自 `periodcount`。
+- `最近时段`：用于判断时段表是否刷新。
+- `新闻累计点击`、`时段累计点击`：用于观察数据是否继续增长。
+
+该页面只读取 MySQL，不直接执行 Docker 命令。这样更安全，也更适合交给普通使用者排查。
 
 ## 停止和重置
 

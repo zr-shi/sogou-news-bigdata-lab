@@ -530,6 +530,85 @@ def render_kpis(df_news: pd.DataFrame, df_period: pd.DataFrame, news_click: Opti
     st.caption("说明：新闻标题数来自 newscount 聚合表的不同标题行数；点击量来自 Flink 写入 MySQL 后的累计结果。")
 
 
+def render_system_status(
+    df_news: pd.DataFrame,
+    df_period: pd.DataFrame,
+    news_table: str,
+    period_table: str,
+    using_mock: bool,
+) -> None:
+    st.subheader("系统状态")
+    st.caption("这个页面只读取 MySQL 结果表，不直接执行 Docker 或宿主机命令，适合给普通使用者做链路自检。")
+
+    _, news_title, news_click, _ = infer_schema(df_news)
+    _, _, period_click, period_time = infer_schema(df_period)
+
+    news_rows = int(len(df_news))
+    period_rows = int(len(df_period))
+    news_total = int(to_numeric_safe(df_news[news_click]).sum()) if news_click and news_click in df_news.columns else 0
+    period_total = int(to_numeric_safe(df_period[period_click]).sum()) if period_click and period_click in df_period.columns else 0
+
+    if using_mock:
+        data_state = "演示数据"
+        data_help = "当前正在使用 Mock 或演示补数数据，适合展示页面，但不代表 Kafka/Flink 真实链路一定在持续写入。"
+    elif news_rows > 0 and period_rows > 0:
+        data_state = "有实时结果"
+        data_help = "MySQL 结果表已经有数据。若数字刷新后继续增长，说明 producer -> Kafka -> Flink -> MySQL 链路正在工作。"
+    else:
+        data_state = "暂无结果"
+        data_help = "结果表为空。请先确认启动脚本是否完成、Flink 作业是否 RUNNING、Kafka/producer 是否正常。"
+
+    latest_period = "-"
+    if period_time and period_time in df_period.columns and not df_period.empty:
+        latest_period = str(df_period[period_time].astype(str).max())
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("数据状态", data_state)
+    c2.metric("新闻标题行数", f"{news_rows:,}")
+    c3.metric("时段窗口行数", f"{period_rows:,}")
+    c4.metric("最近时段", latest_period)
+
+    c5, c6, c7, c8 = st.columns(4)
+    c5.metric("新闻累计点击", f"{news_total:,}")
+    c6.metric("时段累计点击", f"{period_total:,}")
+    c7.metric("新闻表", news_table)
+    c8.metric("时段表", period_table)
+
+    st.info(data_help)
+
+    st.markdown("#### 当前 Docker 快速版链路")
+    st.code(
+        "log-producer -> Kafka(news-kafka) -> Flink(KafkaFlinkMySQL) -> MySQL(newscount/periodcount) -> Streamlit dashboard",
+        language="text",
+    )
+
+    st.markdown("#### 与原始虚拟机流程的关系")
+    st.code(
+        "sougou.sh -> hadoop1 Flume taildir -> hadoop2/hadoop3 Flume 聚合 -> Kafka -> IDEA/Flink -> MySQL -> streamlit run app.py",
+        language="text",
+    )
+    st.caption("当前 Docker 快速版用 log-producer 简化替代了 sougou.sh + Flume 采集/聚合层；Flink 和 Streamlit 已由容器自动启动。")
+
+    st.markdown("#### 排查建议")
+    st.write("如果页面没有真实数据，按下面顺序检查：")
+    st.code(
+        "\n".join(
+            [
+                "powershell -ExecutionPolicy Bypass -File scripts\\start.ps1 -NoPull",
+                "docker compose ps",
+                "docker compose logs --tail=120 log-producer",
+                "docker compose logs --tail=120 flink-job",
+            ]
+        ),
+        language="powershell",
+    )
+
+    if news_title and news_click and news_title in df_news.columns:
+        st.markdown("#### 当前新闻标题样例")
+        sample = df_news[[news_title, news_click]].copy().head(20)
+        st.dataframe(sample, use_container_width=True, height=300)
+
+
 def render_realtime(df_news: pd.DataFrame, df_period: pd.DataFrame):
     st.subheader("实时监控")
     if df_news.empty or df_period.empty:
@@ -2222,6 +2301,7 @@ def render_assoc(df_news: pd.DataFrame, df_period: pd.DataFrame):
 
 
 def main():
+    status_view = "\u7cfb\u7edf\u72b6\u6001"
     realtime_view = "\u5b9e\u65f6\u603b\u89c8"
     advanced_view = "\u589e\u5f3a\u53ef\u89c6\u5316"
     forecast_view = "\u6570\u636e\u9884\u6d4b"
@@ -2231,6 +2311,7 @@ def main():
     raw_view = "\u539f\u59cb\u6570\u636e"
     llm_view = "\u5927\u6a21\u578b\u6d1e\u5bdf"
     view_options = [
+        status_view,
         realtime_view,
         advanced_view,
         forecast_view,
@@ -2345,7 +2426,10 @@ def main():
     st.session_state["active_view"] = current_view
     st.query_params["view"] = current_view
 
-    if current_view == realtime_view:
+    if current_view == status_view:
+        st.markdown(f"### {status_view}")
+        render_system_status(df_news, df_period, news_table, period_table, using_mock)
+    elif current_view == realtime_view:
         st.markdown(f"### {realtime_view}")
         render_realtime(df_news, df_period)
     elif current_view == advanced_view:
