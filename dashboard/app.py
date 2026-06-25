@@ -19,6 +19,7 @@ from streamlit_autorefresh import st_autorefresh
 
 
 APP_VERSION = "2026-04-19-v3-strict"
+AUTO_SEED_ON_EMPTY = os.getenv("AUTO_SEED_ON_EMPTY", "true").strip().lower() not in {"0", "false", "no", "off"}
 
 st.set_page_config(page_title="News 实时可视化与智能分析大屏", page_icon="📊", layout="wide")
 
@@ -279,6 +280,58 @@ def build_mock_data() -> tuple[pd.DataFrame, pd.DataFrame]:
     return df_news, df_period
 
 
+def ensure_runtime_tables(host: str, port: int, db: str, user: str, password: str) -> None:
+    with mysql_conn(host, port, db, user, password) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS newscount (
+                  name VARCHAR(255) NOT NULL,
+                  count BIGINT NOT NULL DEFAULT 0,
+                  PRIMARY KEY (name)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS periodcount (
+                  logtime VARCHAR(64) NOT NULL,
+                  count BIGINT NOT NULL DEFAULT 0,
+                  PRIMARY KEY (logtime)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """
+            )
+
+
+def seed_demo_data(host: str, port: int, db: str, user: str, password: str, reset: bool = False) -> tuple[int, int]:
+    ensure_runtime_tables(host, port, db, user, password)
+    df_news, df_period = build_mock_data()
+    period = df_period.groupby("logtime", as_index=False)["count"].sum()
+
+    with mysql_conn(host, port, db, user, password) as conn:
+        with conn.cursor() as cur:
+            if reset:
+                cur.execute("DELETE FROM periodcount")
+                cur.execute("DELETE FROM newscount")
+            cur.executemany(
+                """
+                INSERT INTO newscount(name, count)
+                VALUES (%s, %s)
+                ON DUPLICATE KEY UPDATE count = VALUES(count)
+                """,
+                [(str(row["name"]), int(row["count"])) for _, row in df_news.iterrows()],
+            )
+            cur.executemany(
+                """
+                INSERT INTO periodcount(logtime, count)
+                VALUES (%s, %s)
+                ON DUPLICATE KEY UPDATE count = VALUES(count)
+                """,
+                [(str(row["logtime"]), int(row["count"])) for _, row in period.iterrows()],
+            )
+    return len(df_news), len(period)
+
+
 def build_llm_dataset_context(df_news: pd.DataFrame, df_period: pd.DataFrame) -> str:
     _, news_title, news_click, _ = infer_schema(df_news)
     _, _, period_click, period_time = infer_schema(df_period)
@@ -464,20 +517,25 @@ def test_deepseek_connectivity(api_key: str) -> str:
 
 
 def render_kpis(df_news: pd.DataFrame, df_period: pd.DataFrame, news_click: Optional[str], period_click: Optional[str]):
-    total_news = len(df_news)
+    unique_news_titles = len(df_news)
     total_click_news = int(to_numeric_safe(df_news[news_click]).sum()) if news_click else 0
     total_click_period = int(to_numeric_safe(df_period[period_click]).sum()) if period_click else 0
+    period_windows = len(df_period)
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("新闻条目数", f"{total_news:,}")
-    c2.metric("新闻表当前点击总量", f"{total_click_news:,}")
-    c3.metric("时段表当前点击总量", f"{total_click_period:,}")
-    c4.metric("刷新时间", datetime.now().strftime("%H:%M:%S"))
-    st.caption("以上指标基于当前表快照统计；如果底层表按窗口滚动或覆盖写入，总量可能随刷新上下波动。")
+    c1.metric("不同新闻标题数", f"{unique_news_titles:,}")
+    c2.metric("新闻表累计点击量", f"{total_click_news:,}")
+    c3.metric("时段窗口数", f"{period_windows:,}")
+    c4.metric("时段表累计点击量", f"{total_click_period:,}")
+    st.caption("说明：新闻标题数来自 newscount 聚合表的不同标题行数；点击量来自 Flink 写入 MySQL 后的累计结果。")
 
 
 def render_realtime(df_news: pd.DataFrame, df_period: pd.DataFrame):
     st.subheader("实时监控")
+    if df_news.empty or df_period.empty:
+        st.info("数据库暂时没有可视化数据。请等待 Kafka/Flink 写入，或在左侧点击“补充演示数据”。")
+        return
+
     n_id, n_title, n_click, _ = infer_schema(df_news)
     p_id, _, p_click, p_time = infer_schema(df_period)
 
@@ -493,6 +551,10 @@ def render_realtime(df_news: pd.DataFrame, df_period: pd.DataFrame):
             rank_all = rank_all.sort_values(n_click, ascending=False).reset_index(drop=True)
 
             total_rows = len(rank_all)
+            if total_rows <= 0:
+                st.info("新闻点击表当前为空，暂无 Top 排行可展示。")
+                return
+
             if "rt_rank_size" not in st.session_state:
                 qp_size = st.query_params.get("rt_rank_size", 10)
                 if isinstance(qp_size, list):
@@ -572,6 +634,10 @@ def render_realtime(df_news: pd.DataFrame, df_period: pd.DataFrame):
             return
 
         base = df_period[[p_time, p_click]].copy().rename(columns={p_time: "__t", p_click: "__v"})
+        if base.empty:
+            st.info("时段点击表当前为空，暂无趋势图可展示。")
+            return
+
         base["__v"] = to_numeric_safe(base["__v"])
         t_str = base["__t"].astype(str).str.strip()
         clock_ratio = t_str.str.match(r"^\d{1,2}:\d{2}(:\d{2})?$", na=False).mean()
@@ -2191,6 +2257,12 @@ def main():
         enable_mock_fallback = st.toggle("\u542f\u7528\u81ea\u52a8Mock\u964d\u7ea7", value=False)
         enable_placeholder_clean = st.toggle("\u542f\u7528\u5360\u4f4d\u884c\u6e05\u6d17", value=False)
         limit = st.slider("\u5355\u8868\u6700\u5927\u8bfb\u53d6\u884c\u6570", 1000, 300000, 100000, 1000)
+        st.divider()
+        st.subheader("\u7cfb\u7edf\u542f\u52a8\u4e0e\u8865\u6570")
+        st.caption("\u811a\u672c\u542f\u52a8\u6574\u5957 Docker \u670d\u52a1\uff1b\u524d\u7aef\u6309\u94ae\u7528\u4e8e\u6570\u636e\u5e93\u4e3a\u7a7a\u65f6\u5feb\u901f\u5199\u5165\u6f14\u793a\u6570\u636e\u3002")
+        seed_clicked = st.button("\u8865\u5145\u6f14\u793a\u6570\u636e", use_container_width=True)
+        reset_seed_clicked = st.button("\u6e05\u7a7a\u5e76\u91cd\u7f6e\u6f14\u793a\u6570\u636e", use_container_width=True)
+        st.code("powershell -ExecutionPolicy Bypass -File scripts\\start.ps1", language="powershell")
 
     qp_view = st.query_params.get("view", realtime_view)
     if isinstance(qp_view, list):
@@ -2211,6 +2283,11 @@ def main():
     dropped_news = 0
     dropped_period = 0
     try:
+        if seed_clicked or reset_seed_clicked:
+            news_rows, period_rows = seed_demo_data(host, int(port), db, user, password, reset=reset_seed_clicked)
+            st.success(f"\u5df2\u5199\u5165\u6f14\u793a\u6570\u636e\uff1a\u65b0\u95fb {news_rows} \u6761\uff0c\u65f6\u6bb5 {period_rows} \u6761\u3002")
+            st.rerun()
+
         tables = list_tables(host, int(port), db, user, password)
         news_table = pick_table(tables, ["newcounts", "newscount"])
         period_table = pick_table(tables, ["periodcounts", "periodcount"])
@@ -2223,6 +2300,12 @@ def main():
         if enable_placeholder_clean:
             df_news, dropped_news = clean_placeholder_rows(df_news)
             df_period, dropped_period = clean_placeholder_rows(df_period)
+
+        if AUTO_SEED_ON_EMPTY and (df_news.empty or df_period.empty):
+            news_rows, period_rows = seed_demo_data(host, int(port), db, user, password)
+            st.info(f"\u68c0\u6d4b\u5230\u6570\u636e\u5e93\u4e3a\u7a7a\uff0c\u5df2\u81ea\u52a8\u8865\u5145\u6f14\u793a\u6570\u636e\uff1a\u65b0\u95fb {news_rows} \u6761\uff0c\u65f6\u6bb5 {period_rows} \u6761\u3002")
+            df_news = fetch_table(host, int(port), db, user, password, news_table, limit)
+            df_period = fetch_table(host, int(port), db, user, password, period_table, limit)
 
         if enable_mock_fallback and (looks_like_placeholder_table(df_news) and looks_like_placeholder_table(df_period)):
             using_mock = True

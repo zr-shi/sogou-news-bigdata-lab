@@ -28,6 +28,7 @@ public class KafkaFlinkMySQL {
         //读取kafka数据
         String topic = GlobalConfig.env("KAFKA_TOPIC", "sougoulogs");
         FlinkKafkaConsumer<String> myConsumer = new FlinkKafkaConsumer<String>(topic,new SimpleStringSchema(),prop);
+        myConsumer.setStartFromEarliest();
         DataStream<String> stream = senv.addSource(myConsumer);
 
         //数据过滤
