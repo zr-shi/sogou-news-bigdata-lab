@@ -109,6 +109,7 @@ fi
 
 docker compose up -d --no-build mysql zookeeper kafka jobmanager taskmanager dashboard log-producer
 wait_kafka_healthy
+docker compose up -d --no-build log-producer
 wait_http "http://localhost:8501/_stcore/health" "Dashboard"
 wait_http "http://localhost:8081/overview" "Flink UI"
 

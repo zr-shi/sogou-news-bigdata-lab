@@ -94,6 +94,7 @@ if (-not $NoPull) {
 
 docker compose up -d --no-build mysql zookeeper kafka jobmanager taskmanager dashboard log-producer
 Wait-KafkaHealthy
+docker compose up -d --no-build log-producer
 Wait-Http "http://localhost:8501/_stcore/health" "Dashboard"
 Wait-Http "http://localhost:8081/overview" "Flink UI"
 
