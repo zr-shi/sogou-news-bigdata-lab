@@ -13,7 +13,11 @@ import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer;
 import org.apache.flink.util.Collector;
 
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class KafkaFlinkMySQL {
     public static void main(String[] args) throws Exception {
@@ -31,8 +35,8 @@ public class KafkaFlinkMySQL {
         myConsumer.setStartFromEarliest();
         DataStream<String> stream = senv.addSource(myConsumer);
 
-        //数据过滤
-        DataStream<String> filter = stream.filter((value)->value.split(",").length==6);
+        //数据过滤：兼容逗号、中文逗号、竖线、制表符、空格分隔以及带引号标题。
+        DataStream<String> filter = stream.filter((value) -> LogRecord.parse(value) != null);
 
         //统计新闻话题访问量
         DataStream<Tuple2<String,Integer>> newsCounts = filter.flatMap(new lineSplitter())
@@ -64,16 +68,121 @@ public class KafkaFlinkMySQL {
     public static final class lineSplitter implements FlatMapFunction<String, Tuple2<String,Integer>>{
         @Override
         public void flatMap(String s, Collector<Tuple2<String, Integer>> collector) throws Exception {
-            String[] tokens = s.split(",");
-            collector.collect(new Tuple2<>(tokens[2],1));
+            LogRecord record = LogRecord.parse(s);
+            if (record != null) {
+                collector.collect(new Tuple2<>(record.title, 1));
+            }
         }
     }
 
     public static final class lineSplitter2 implements FlatMapFunction<String, Tuple2<String,Integer>>{
         @Override
         public void flatMap(String s, Collector<Tuple2<String, Integer>> collector) throws Exception {
-            String[] tokens = s.split(",");
-            collector.collect(new Tuple2<>(tokens[0],1));
+            LogRecord record = LogRecord.parse(s);
+            if (record != null) {
+                collector.collect(new Tuple2<>(record.logTime, 1));
+            }
+        }
+    }
+
+    static final class LogRecord {
+        private static final Pattern TIME_PATTERN = Pattern.compile("(\\d{1,2})[:：](\\d{1,2})(?:[:：](\\d{1,2}))?");
+
+        final String logTime;
+        final String title;
+
+        LogRecord(String logTime, String title) {
+            this.logTime = logTime;
+            this.title = title;
+        }
+
+        static LogRecord parse(String raw) {
+            if (raw == null) {
+                return null;
+            }
+
+            String line = raw.trim();
+            if (line.isEmpty()) {
+                return null;
+            }
+
+            line = line.replace("\uFEFF", "");
+
+            List<String> fields = parseCsv(line);
+            if (fields.size() != 6) {
+                fields = parseCsv(line.replaceAll("\\s*(\\|\\||\\|)\\s*", ","));
+            }
+            if (fields.size() != 6) {
+                fields = parseCsv(line.replaceAll("\\s*[，、]\\s*", ","));
+            }
+            if (fields.size() != 6) {
+                fields = splitWhitespace(line);
+            }
+            if (fields.size() != 6) {
+                return null;
+            }
+
+            String logTime = normalizeTime(clean(fields.get(0)));
+            String title = clean(fields.get(2));
+            if (logTime.isEmpty() || title.isEmpty()) {
+                return null;
+            }
+            return new LogRecord(logTime, title);
+        }
+
+        private static List<String> splitWhitespace(String line) {
+            String[] tokens = line.trim().split("\\s+", 6);
+            List<String> fields = new ArrayList<>();
+            for (String token : tokens) {
+                fields.add(token);
+            }
+            return fields;
+        }
+
+        private static List<String> parseCsv(String line) {
+            List<String> fields = new ArrayList<>();
+            StringBuilder current = new StringBuilder();
+            boolean quoted = false;
+            for (int i = 0; i < line.length(); i++) {
+                char ch = line.charAt(i);
+                if (ch == '"') {
+                    if (quoted && i + 1 < line.length() && line.charAt(i + 1) == '"') {
+                        current.append('"');
+                        i++;
+                    } else {
+                        quoted = !quoted;
+                    }
+                } else if (ch == ',' && !quoted) {
+                    fields.add(current.toString().trim());
+                    current.setLength(0);
+                } else {
+                    current.append(ch);
+                }
+            }
+            fields.add(current.toString().trim());
+            return fields;
+        }
+
+        private static String clean(String value) {
+            String cleaned = value == null ? "" : value.trim();
+            while ((cleaned.startsWith("\"") && cleaned.endsWith("\""))
+                    || (cleaned.startsWith("'") && cleaned.endsWith("'"))
+                    || (cleaned.startsWith("“") && cleaned.endsWith("”"))
+                    || (cleaned.startsWith("《") && cleaned.endsWith("》"))) {
+                cleaned = cleaned.substring(1, cleaned.length() - 1).trim();
+            }
+            return cleaned.replaceAll("[\\[\\]]", "");
+        }
+
+        private static String normalizeTime(String value) {
+            Matcher matcher = TIME_PATTERN.matcher(value);
+            if (!matcher.find()) {
+                return "";
+            }
+            int hour = Integer.parseInt(matcher.group(1)) % 24;
+            int minute = Integer.parseInt(matcher.group(2)) % 60;
+            int second = matcher.group(3) == null ? 0 : Integer.parseInt(matcher.group(3)) % 60;
+            return String.format("%02d:%02d:%02d", hour, minute, second);
         }
     }
 }

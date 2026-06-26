@@ -1,5 +1,8 @@
 import os
+import csv
 import random
+import re
+from io import StringIO
 import time
 from datetime import datetime
 from pathlib import Path
@@ -22,6 +25,8 @@ DYNAMIC_TITLES = os.getenv("PRODUCER_DYNAMIC_TITLES", "true").strip().lower() no
 UNIQUE_EVERY = max(1, int(os.getenv("PRODUCER_UNIQUE_EVERY", "5")))
 TOPIC_POOL_SIZE = int(os.getenv("PRODUCER_TOPIC_POOL_SIZE", "0"))
 INCLUDE_RUN_LABEL = os.getenv("PRODUCER_INCLUDE_RUN_LABEL", "true").strip().lower() not in {"0", "false", "no", "off"}
+REALISTIC_TITLES = os.getenv("PRODUCER_REALISTIC_TITLES", "true").strip().lower() not in {"0", "false", "no", "off"}
+NOISY_LOG_FORMATS = os.getenv("PRODUCER_NOISY_LOG_FORMATS", "true").strip().lower() not in {"0", "false", "no", "off"}
 RUN_LABEL = os.getenv("PRODUCER_RUN_LABEL") or datetime.now().strftime("%Y%m%d%H%M%S")
 CONTROL_ENABLED = os.getenv("PRODUCER_CONTROL_ENABLED", "true").strip().lower() not in {"0", "false", "no", "off"}
 START_ENABLED = os.getenv("PRODUCER_START_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
@@ -55,35 +60,199 @@ BASE_TOPICS = [
     "文化出海",
 ]
 
-TITLE_SUFFIXES = [
-    "最新进展",
-    "行业观察",
-    "政策解读",
-    "用户热议",
-    "市场表现",
-    "技术突破",
-    "年度报告",
-    "应用案例",
-    "趋势分析",
-    "深度调查",
+NEWS_TITLE_PATTERNS = [
+    "{city}发布{topic}新政策：{group}关注这些变化",
+    "{topic}进入落地关键期：多地试点释放新信号",
+    "{company}回应{topic}进展：将加快{action}",
+    "{city}{scene}{topic}项目启动：预计带动{effect}",
+    "{topic}热度持续攀升：专家提醒关注{risk}",
+    "{group}热议{topic}：相关搜索量明显上涨",
+    "{topic}迎来新一轮调整：{industry}企业加速布局",
+    "{city}推进{topic}应用：首批示范场景公布",
+    "{topic}报告发布：{effect}成为年度关键词",
+    "{company}与{city}合作建设{topic}平台",
+    "{topic}带动消费回暖：{scene}成为热门选择",
+    "{industry}观察：{topic}正在改变{group}体验",
+    "{topic}赛道融资升温：头部企业抢占{scene}",
+    "{city}上线{topic}服务：办事效率进一步提升",
+    "{topic}相关岗位需求增长：{group}迎来新机会",
+    "{company}发布{topic}解决方案：主打{effect}",
+    "{topic}监管细则征求意见：行业进入规范期",
+    "{city}{scene}人气回升：{topic}成为讨论焦点",
+    "{topic}技术路线再更新：{industry}成本有望下降",
+    "{group}怎么看{topic}？调查显示关注点集中在{risk}",
+]
+
+CITIES = [
+    "北京",
+    "上海",
+    "深圳",
+    "杭州",
+    "成都",
+    "武汉",
+    "西安",
+    "广州",
+    "苏州",
+    "重庆",
+]
+
+COMPANIES = [
+    "华为",
+    "比亚迪",
+    "小米",
+    "阿里云",
+    "腾讯",
+    "宁德时代",
+    "京东",
+    "科大讯飞",
+    "美团",
+    "百度",
+]
+
+GROUPS = [
+    "年轻人",
+    "中小企业",
+    "高校毕业生",
+    "消费者",
+    "投资者",
+    "家长",
+    "游客",
+    "开发者",
+    "制造企业",
+    "基层社区",
+]
+
+SCENES = [
+    "商圈",
+    "园区",
+    "校园",
+    "医院",
+    "景区",
+    "港口",
+    "社区",
+    "工厂",
+    "展会",
+    "交通枢纽",
+]
+
+INDUSTRIES = [
+    "汽车",
+    "文旅",
+    "教育",
+    "医疗",
+    "金融",
+    "制造",
+    "零售",
+    "物流",
+    "能源",
+    "互联网",
+]
+
+ACTIONS = [
+    "产品迭代",
+    "场景开放",
+    "供应链建设",
+    "生态合作",
+    "人才培养",
+    "数据治理",
+    "安全评估",
+    "渠道下沉",
+]
+
+EFFECTS = [
+    "降本增效",
+    "服务升级",
+    "绿色转型",
+    "智能化改造",
+    "就业扩容",
+    "消费复苏",
+    "效率提升",
+    "产业协同",
+]
+
+RISKS = [
+    "隐私保护",
+    "价格波动",
+    "安全边界",
+    "人才缺口",
+    "数据质量",
+    "合规要求",
+    "体验落差",
+    "供应稳定",
 ]
 
 
 def normalize_line(line: str):
-    fields = [field.strip() for field in line.strip().split(",")]
+    text = line.strip().lstrip("\ufeff")
+    if not text:
+        return None
+
+    fields = parse_csv_fields(text)
+    if len(fields) != 6:
+        fields = parse_csv_fields(re.sub(r"\s*(?:\|\||\|)\s*", ",", text))
+    if len(fields) != 6:
+        fields = parse_csv_fields(re.sub(r"\s*[，、]\s*", ",", text))
+    if len(fields) != 6:
+        fields = re.split(r"\s+", text, maxsplit=5)
+    fields = [field.strip().strip('"').strip("'") for field in fields]
     if len(fields) != 6:
         return None
-    return ",".join(fields)
+    fields[0] = normalize_time(fields[0])
+    if not fields[0] or not fields[2]:
+        return None
+    return ",".join(csv_escape(field) for field in fields)
+
+
+def parse_csv_fields(text: str):
+    try:
+        return next(csv.reader(StringIO(text), skipinitialspace=True))
+    except csv.Error:
+        return []
+
+
+def csv_escape(value: str) -> str:
+    if any(char in value for char in [",", '"', "\n", "\r"]):
+        return '"' + value.replace('"', '""') + '"'
+    return value
+
+
+def normalize_time(value: str) -> str:
+    value = value.strip()
+    match = re.search(r"(\d{1,2})[:：](\d{1,2})(?:[:：](\d{1,2}))?", value)
+    if not match:
+        return datetime.now().strftime("%H:%M:%S")
+    hour = int(match.group(1)) % 24
+    minute = int(match.group(2)) % 60
+    second = int(match.group(3) or 0) % 60
+    return f"{hour:02d}:{minute:02d}:{second:02d}"
 
 
 def generated_title(index: int) -> str:
     if not DYNAMIC_TITLES:
         return random.choice(BASE_TOPICS[:10])
 
+    if REALISTIC_TITLES:
+        topic_index = index // UNIQUE_EVERY
+        if TOPIC_POOL_SIZE > 0:
+            topic_index = topic_index % TOPIC_POOL_SIZE
+        template = NEWS_TITLE_PATTERNS[topic_index % len(NEWS_TITLE_PATTERNS)]
+        topic = BASE_TOPICS[topic_index % len(BASE_TOPICS)]
+        return template.format(
+            city=CITIES[(topic_index // 2) % len(CITIES)],
+            company=COMPANIES[(topic_index // 3) % len(COMPANIES)],
+            group=GROUPS[(topic_index // 5) % len(GROUPS)],
+            scene=SCENES[(topic_index // 7) % len(SCENES)],
+            industry=INDUSTRIES[(topic_index // 11) % len(INDUSTRIES)],
+            action=ACTIONS[(topic_index // 13) % len(ACTIONS)],
+            effect=EFFECTS[(topic_index // 17) % len(EFFECTS)],
+            risk=RISKS[(topic_index // 19) % len(RISKS)],
+            topic=topic,
+        )
+
     bucket = index // UNIQUE_EVERY
     topic_index = bucket if TOPIC_POOL_SIZE <= 0 else bucket % TOPIC_POOL_SIZE
     base = BASE_TOPICS[topic_index % len(BASE_TOPICS)]
-    suffix = TITLE_SUFFIXES[(topic_index // len(BASE_TOPICS)) % len(TITLE_SUFFIXES)]
+    suffix = ["最新进展", "行业观察", "政策解读", "用户热议", "市场表现"][topic_index % 5]
     serial = f"{topic_index + 1:04d}"
     if INCLUDE_RUN_LABEL:
         serial = f"{RUN_LABEL}-{serial}"
@@ -92,16 +261,33 @@ def generated_title(index: int) -> str:
 
 def generated_line(index: int) -> str:
     now = datetime.now()
-    return ",".join(
-        [
-            now.strftime("%H:%M:%S"),
-            str(random.randint(100000, 999999)),
-            generated_title(index),
-            str(random.randint(1, 50)),
-            str(random.randint(1, 20)),
-            random.choice(["web", "app", "search"]),
-        ]
-    )
+    fields = [
+        now.strftime("%H:%M:%S"),
+        str(random.randint(100000, 999999)),
+        generated_title(index),
+        str(random.randint(1, 50)),
+        str(random.randint(1, 20)),
+        random.choice(["web", "app", "search"]),
+    ]
+    if not NOISY_LOG_FORMATS:
+        return ",".join(csv_escape(field) for field in fields)
+
+    variant = index % 8
+    if variant == 1:
+        return " , ".join(csv_escape(field) for field in fields)
+    if variant == 2:
+        return "|".join(fields)
+    if variant == 3:
+        return "||".join(fields)
+    if variant == 4:
+        return "\t".join(fields)
+    if variant == 5:
+        return "，".join(fields)
+    if variant == 6:
+        noisy = fields[:]
+        noisy[2] = f"“{noisy[2]}”"
+        return ",".join(csv_escape(field) for field in noisy)
+    return ",".join(csv_escape(field) for field in fields)
 
 
 def source_lines():
