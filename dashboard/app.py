@@ -18,10 +18,359 @@ from sklearn.preprocessing import StandardScaler
 from streamlit_autorefresh import st_autorefresh
 
 
-APP_VERSION = "2026-04-19-v3-strict"
+APP_VERSION = "2026-06-26-v4-command-center"
 AUTO_SEED_ON_EMPTY = os.getenv("AUTO_SEED_ON_EMPTY", "true").strip().lower() not in {"0", "false", "no", "off"}
 
 st.set_page_config(page_title="News 实时可视化与智能分析大屏", page_icon="📊", layout="wide")
+
+
+def inject_global_styles() -> None:
+    st.markdown(
+        """
+        <style>
+        :root {
+            --news-bg: #f5f7fb;
+            --news-panel: rgba(255, 255, 255, 0.92);
+            --news-panel-strong: #ffffff;
+            --news-ink: #111827;
+            --news-muted: #6b7280;
+            --news-line: rgba(148, 163, 184, 0.26);
+            --news-blue: #2563eb;
+            --news-cyan: #0891b2;
+            --news-red: #ef4444;
+            --news-green: #10b981;
+            --news-amber: #f59e0b;
+            --news-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
+            --news-shadow-soft: 0 10px 30px rgba(15, 23, 42, 0.06);
+        }
+
+        .stApp {
+            background:
+                radial-gradient(circle at 8% 2%, rgba(37, 99, 235, 0.10), transparent 30%),
+                radial-gradient(circle at 88% 8%, rgba(8, 145, 178, 0.10), transparent 28%),
+                linear-gradient(180deg, #f8fafc 0%, var(--news-bg) 42%, #eef2f7 100%);
+            color: var(--news-ink);
+        }
+
+        [data-testid="stSidebar"] {
+            background:
+                linear-gradient(180deg, rgba(15, 23, 42, 0.98) 0%, rgba(30, 41, 59, 0.96) 100%);
+            border-right: 1px solid rgba(255,255,255,0.08);
+        }
+        [data-testid="stSidebar"] * {
+            color: rgba(248, 250, 252, 0.92) !important;
+        }
+        [data-testid="stSidebar"] input,
+        [data-testid="stSidebar"] textarea,
+        [data-testid="stSidebar"] [data-baseweb="input"] {
+            color: #0f172a !important;
+        }
+
+        .block-container {
+            padding-top: 1.45rem;
+            padding-bottom: 3rem;
+            max-width: 1500px;
+        }
+
+        .news-hero {
+            position: relative;
+            overflow: hidden;
+            border: 1px solid rgba(37, 99, 235, 0.14);
+            border-radius: 28px;
+            padding: 28px 30px;
+            margin: 0 0 20px 0;
+            background:
+                linear-gradient(135deg, rgba(15, 23, 42, 0.97) 0%, rgba(30, 64, 175, 0.94) 48%, rgba(8, 145, 178, 0.90) 100%);
+            box-shadow: var(--news-shadow);
+        }
+        .news-hero:after {
+            content: "";
+            position: absolute;
+            width: 380px;
+            height: 380px;
+            right: -130px;
+            top: -160px;
+            background: radial-gradient(circle, rgba(255,255,255,0.20), transparent 62%);
+        }
+        .news-hero-kicker {
+            color: rgba(224, 242, 254, 0.88);
+            font-size: 13px;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+        }
+        .news-hero-title {
+            color: #ffffff;
+            font-size: clamp(34px, 4.1vw, 58px);
+            line-height: 1.06;
+            font-weight: 850;
+            letter-spacing: -0.045em;
+            margin: 0;
+        }
+        .news-hero-subtitle {
+            color: rgba(241, 245, 249, 0.82);
+            max-width: 880px;
+            font-size: 16px;
+            line-height: 1.75;
+            margin-top: 14px;
+        }
+        .news-hero-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 18px;
+        }
+        .news-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 7px 12px;
+            border-radius: 999px;
+            border: 1px solid rgba(255,255,255,0.18);
+            background: rgba(255,255,255,0.10);
+            color: rgba(255,255,255,0.90);
+            font-size: 13px;
+            backdrop-filter: blur(10px);
+        }
+
+        .ops-strip {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 14px;
+            margin: 8px 0 18px 0;
+        }
+        .ops-card {
+            border: 1px solid var(--news-line);
+            background: var(--news-panel);
+            border-radius: 20px;
+            padding: 16px 18px;
+            box-shadow: var(--news-shadow-soft);
+        }
+        .ops-label {
+            color: var(--news-muted);
+            font-size: 12px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            margin-bottom: 7px;
+        }
+        .ops-value {
+            color: var(--news-ink);
+            font-size: 20px;
+            font-weight: 800;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .ops-hint {
+            color: var(--news-muted);
+            font-size: 12px;
+            margin-top: 6px;
+        }
+
+        .view-header {
+            border: 1px solid var(--news-line);
+            background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(255,255,255,0.86));
+            border-radius: 24px;
+            padding: 18px 22px;
+            margin: 10px 0 18px 0;
+            box-shadow: var(--news-shadow-soft);
+        }
+        .view-title {
+            color: var(--news-ink);
+            font-size: 26px;
+            font-weight: 850;
+            letter-spacing: -0.02em;
+            margin: 0;
+        }
+        .view-desc {
+            color: var(--news-muted);
+            font-size: 14px;
+            margin-top: 7px;
+            line-height: 1.7;
+        }
+        .view-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 12px;
+        }
+        .view-tag {
+            border-radius: 999px;
+            padding: 5px 10px;
+            background: #eef2ff;
+            color: #3730a3;
+            font-size: 12px;
+            font-weight: 650;
+        }
+
+        .stButton > button {
+            border-radius: 14px !important;
+            border: 1px solid rgba(37, 99, 235, 0.18) !important;
+            background: linear-gradient(180deg, #ffffff, #f8fafc) !important;
+            box-shadow: 0 7px 16px rgba(15, 23, 42, 0.06) !important;
+            transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, background 120ms ease !important;
+            font-weight: 720 !important;
+        }
+        .stButton > button:hover {
+            transform: translateY(-1px);
+            border-color: rgba(37, 99, 235, 0.38) !important;
+            box-shadow: 0 12px 24px rgba(37, 99, 235, 0.12) !important;
+        }
+        .stButton > button:active {
+            transform: translateY(1px) scale(0.99);
+            box-shadow: 0 4px 10px rgba(15, 23, 42, 0.10) inset !important;
+        }
+
+        div[role="radiogroup"] {
+            gap: 8px;
+            padding: 8px;
+            border-radius: 20px;
+            border: 1px solid var(--news-line);
+            background: rgba(255,255,255,0.74);
+            box-shadow: var(--news-shadow-soft);
+        }
+        div[role="radiogroup"] label {
+            border: 1px solid transparent;
+            border-radius: 14px;
+            padding: 6px 10px;
+            background: transparent;
+            transition: all 140ms ease;
+        }
+        div[role="radiogroup"] label:hover {
+            background: #eff6ff;
+            border-color: rgba(37,99,235,0.18);
+            transform: translateY(-1px);
+        }
+
+        [data-testid="stMetric"] {
+            border: 1px solid var(--news-line);
+            background: var(--news-panel-strong);
+            border-radius: 20px;
+            padding: 16px 18px;
+            box-shadow: var(--news-shadow-soft);
+        }
+        [data-testid="stMetricLabel"] p {
+            color: var(--news-muted);
+            font-size: 13px;
+        }
+        [data-testid="stMetricValue"] {
+            color: var(--news-ink);
+            font-weight: 850;
+        }
+
+        div[data-testid="stDataFrame"],
+        div[data-testid="stTable"],
+        div[data-testid="stPlotlyChart"] {
+            border-radius: 20px;
+            overflow: hidden;
+        }
+
+        .sidebar-card {
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 18px;
+            padding: 12px 14px;
+            background: rgba(255,255,255,0.07);
+            margin-bottom: 14px;
+        }
+        .sidebar-card-title {
+            font-weight: 800;
+            font-size: 15px;
+            margin-bottom: 6px;
+        }
+        .sidebar-card-desc {
+            color: rgba(226,232,240,0.76) !important;
+            font-size: 12px;
+            line-height: 1.65;
+        }
+
+        @media (max-width: 900px) {
+            .ops-strip {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .news-hero {
+                padding: 22px;
+                border-radius: 22px;
+            }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_hero() -> None:
+    st.markdown(
+        f"""
+        <div class="news-hero">
+            <div class="news-hero-kicker">Sogou News Big Data Command Center</div>
+            <h1 class="news-hero-title">搜狗新闻大数据实战</h1>
+            <div class="news-hero-subtitle">
+                实时采集、流式计算、热点识别、异常预警与智能洞察一体化展示。当前 Docker 快速版围绕
+                producer → Kafka → Flink → MySQL → Streamlit 构建，适合教学演示和业务链路讲解。
+            </div>
+            <div class="news-hero-meta">
+                <span class="news-pill">实时链路监控</span>
+                <span class="news-pill">热点趋势分析</span>
+                <span class="news-pill">抗干扰日志解析</span>
+                <span class="news-pill">版本 {APP_VERSION}</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_ops_strip(
+    current_view: str,
+    generation_enabled: Optional[bool],
+    auto_refresh: bool,
+    refresh_sec: int,
+    using_mock: bool,
+) -> None:
+    generation_text = "正在生成" if generation_enabled is True else "已暂停" if generation_enabled is False else "未知"
+    data_text = "演示/降级数据" if using_mock else "MySQL 实时结果"
+    refresh_text = f"{refresh_sec}s 自动刷新" if auto_refresh else "手动刷新"
+    st.markdown(
+        f"""
+        <div class="ops-strip">
+            <div class="ops-card">
+                <div class="ops-label">当前业务模块</div>
+                <div class="ops-value">{current_view}</div>
+                <div class="ops-hint">切换模块会同步地址栏参数</div>
+            </div>
+            <div class="ops-card">
+                <div class="ops-label">实时生成开关</div>
+                <div class="ops-value">{generation_text}</div>
+                <div class="ops-hint">由 MySQL 控制表驱动 producer</div>
+            </div>
+            <div class="ops-card">
+                <div class="ops-label">刷新策略</div>
+                <div class="ops-value">{refresh_text}</div>
+                <div class="ops-hint">大模型页面自动暂停刷新</div>
+            </div>
+            <div class="ops-card">
+                <div class="ops-label">数据模式</div>
+                <div class="ops-value">{data_text}</div>
+                <div class="ops-hint">优先展示 Flink 写入的结果表</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_view_header(view_name: str, description: str, tags: list[str]) -> None:
+    tag_html = "".join(f'<span class="view-tag">{tag}</span>' for tag in tags)
+    st.markdown(
+        f"""
+        <div class="view-header">
+            <h2 class="view-title">{view_name}</h2>
+            <div class="view-desc">{description}</div>
+            <div class="view-tags">{tag_html}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 # Default DB config
@@ -658,7 +1007,7 @@ def render_system_status(
     if news_title and news_click and news_title in df_news.columns:
         st.markdown("#### 当前新闻标题样例")
         sample = df_news[[news_title, news_click]].copy().head(20)
-        st.dataframe(sample, use_container_width=True, height=300)
+        st.dataframe(sample, width="stretch", height=300)
 
 
 def render_realtime(df_news: pd.DataFrame, df_period: pd.DataFrame):
@@ -714,9 +1063,9 @@ def render_realtime(df_news: pd.DataFrame, df_period: pd.DataFrame):
             rail, chart_area = st.columns([0.28, 1], vertical_alignment="top")
             with rail:
                 st.markdown("**浏览窗口**")
-                if st.button("上一页", key="rt_rank_prev", use_container_width=True, disabled=current_page <= 1):
+                if st.button("上一页", key="rt_rank_prev", width="stretch", disabled=current_page <= 1):
                     current_page -= 1
-                if st.button("下一页", key="rt_rank_next", use_container_width=True, disabled=current_page >= page_count):
+                if st.button("下一页", key="rt_rank_next", width="stretch", disabled=current_page >= page_count):
                     current_page += 1
                 current_page = st.number_input(
                     "页码",
@@ -756,7 +1105,7 @@ def render_realtime(df_news: pd.DataFrame, df_period: pd.DataFrame):
                     yaxis={"categoryorder": "total ascending"},
                     margin=dict(l=10, r=10, t=60, b=10),
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
 
     with right:
         st.markdown("**点击趋势与流量波动**")
@@ -798,7 +1147,7 @@ def render_realtime(df_news: pd.DataFrame, df_period: pd.DataFrame):
                 )
             )
             fig_line.update_layout(title="10秒粒度点击趋势", height=300, margin=dict(l=10, r=10, t=50, b=10), xaxis_title="时段", yaxis_title="访问量")
-            st.plotly_chart(fig_line, use_container_width=True)
+            st.plotly_chart(fig_line, width="stretch")
 
             sec_bar = clock.groupby("sec", as_index=False)["__v"].sum().sort_values("sec")
             sec_bar["clock"] = sec_bar["sec"].apply(lambda x: str(pd.to_timedelta(int(x), unit="s")))
@@ -811,14 +1160,14 @@ def render_realtime(df_news: pd.DataFrame, df_period: pd.DataFrame):
                 title="秒级访问量分布",
             )
             fig_bar.update_layout(height=250, margin=dict(l=10, r=10, t=50, b=10), xaxis_title="秒", yaxis_title="访问量")
-            st.plotly_chart(fig_bar, use_container_width=True)
+            st.plotly_chart(fig_bar, width="stretch")
 
             clock["minute"] = (clock["sec"] // 60) % 60
             clock["second"] = clock["sec"] % 60
             h = clock.groupby(["minute", "second"], as_index=False)["__v"].sum()
             fig_heat = px.density_heatmap(h, x="second", y="minute", z="__v", color_continuous_scale="Turbo", title="分钟-秒点击热力图")
             fig_heat.update_layout(height=290, margin=dict(l=10, r=10, t=50, b=10), xaxis_title="秒", yaxis_title="分钟")
-            st.plotly_chart(fig_heat, use_container_width=True)
+            st.plotly_chart(fig_heat, width="stretch")
             return
 
         dt = to_datetime_safe(base["__t"])
@@ -832,7 +1181,7 @@ def render_realtime(df_news: pd.DataFrame, df_period: pd.DataFrame):
                 go.Scatter(x=trend["ts"], y=trend["val"], mode="lines", line=dict(color="#00D1FF", width=3), fill="tozeroy", fillcolor="rgba(0,209,255,0.15)")
             )
             fig_line.update_layout(title="点击流量时序", template="plotly_dark", height=290, margin=dict(l=10, r=10, t=50, b=10))
-            st.plotly_chart(fig_line, use_container_width=True)
+            st.plotly_chart(fig_line, width="stretch")
 
             heat = base.copy()
             heat["ts"] = dt
@@ -845,14 +1194,14 @@ def render_realtime(df_news: pd.DataFrame, df_period: pd.DataFrame):
             h = h.sort_values(["weekday", "hour"])
             fig_heat = px.density_heatmap(h, x="hour", y="weekday", z="__v", color_continuous_scale="Electric", title="星期-小时点击热力图")
             fig_heat.update_layout(height=290, margin=dict(l=10, r=10, t=50, b=10))
-            st.plotly_chart(fig_heat, use_container_width=True)
+            st.plotly_chart(fig_heat, width="stretch")
         else:
             # final fallback: record-order trend
             fb = base.copy().reset_index(drop=True)
             fb["idx"] = fb.index + 1
             fig = px.line(fb, x="idx", y="__v", title="点击趋势（按记录序号）")
             fig.update_layout(height=290, margin=dict(l=10, r=10, t=50, b=10))
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
             st.info("时间列无法解析为时间，已自动按记录顺序展示。")
 
 
@@ -903,7 +1252,7 @@ def render_advanced_visuals(df_news: pd.DataFrame, df_period: pd.DataFrame):
                     xaxis_title="时段",
                     yaxis_title="总访问量",
                 )
-                st.plotly_chart(fig10, use_container_width=True)
+                st.plotly_chart(fig10, width="stretch")
             else:
                 st.info("时段数据为空，无法绘制10秒访问量图。")
         else:
@@ -935,7 +1284,7 @@ def render_advanced_visuals(df_news: pd.DataFrame, df_period: pd.DataFrame):
             )
         )
         fig_gauge.update_layout(height=360, margin=dict(l=10, r=10, t=50, b=10))
-        st.plotly_chart(fig_gauge, use_container_width=True)
+        st.plotly_chart(fig_gauge, width="stretch")
 
     # 3) Top100 扇形分布（极坐标）
     news_top = df_news[[n_title, n_click]].copy()
@@ -959,7 +1308,7 @@ def render_advanced_visuals(df_news: pd.DataFrame, df_period: pd.DataFrame):
         )
         fig_polar.update_layout(coloraxis_colorbar_title="数量")
         fig_polar.update_layout(height=620, margin=dict(l=10, r=10, t=60, b=20))
-        st.plotly_chart(fig_polar, use_container_width=True)
+        st.plotly_chart(fig_polar, width="stretch")
 
 
 def render_forecast(df_news: pd.DataFrame, df_period: pd.DataFrame):
@@ -1168,7 +1517,7 @@ def render_forecast(df_news: pd.DataFrame, df_period: pd.DataFrame):
             xaxis=dict(title="时间窗口 / 预测步"),
             yaxis=dict(title="点击量"),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
         st.caption("主图采用趋势 + 季节性 + 漂移回归的组合预测，外圈扇形表示预测不确定性随时间向前逐步扩散。")
 
     with top_right:
@@ -1186,7 +1535,7 @@ def render_forecast(df_news: pd.DataFrame, df_period: pd.DataFrame):
             title="三情景预测路径",
         )
         fig_scenario.update_layout(height=260, margin=dict(l=10, r=10, t=50, b=10))
-        st.plotly_chart(fig_scenario, use_container_width=True)
+        st.plotly_chart(fig_scenario, width="stretch")
 
         density_df = pd.DataFrame(
             {
@@ -1207,7 +1556,7 @@ def render_forecast(df_news: pd.DataFrame, df_period: pd.DataFrame):
             title="预测概率场",
         )
         fig_heat.update_layout(height=260, margin=dict(l=10, r=10, t=50, b=10))
-        st.plotly_chart(fig_heat, use_container_width=True)
+        st.plotly_chart(fig_heat, width="stretch")
 
     bottom_left, bottom_right = st.columns([1.0, 1.0], vertical_alignment="top")
     with bottom_left:
@@ -1222,7 +1571,7 @@ def render_forecast(df_news: pd.DataFrame, df_period: pd.DataFrame):
             forecast_card[["phase", "value", "p80_low", "p80_high", "节奏判断"]]
             .rename(columns={"phase": "预测节点", "value": "基准预测", "p80_low": "80%下界", "p80_high": "80%上界"})
             .round(2),
-            use_container_width=True,
+            width="stretch",
             height=360,
         )
 
@@ -1250,7 +1599,7 @@ def render_forecast(df_news: pd.DataFrame, df_period: pd.DataFrame):
             )
             fig_topic.update_traces(texttemplate="%{text:.1f}", textposition="outside")
             fig_topic.update_layout(height=max(320, 36 * len(topic_df) + 60), margin=dict(l=10, r=10, t=50, b=10))
-            st.plotly_chart(fig_topic, use_container_width=True)
+            st.plotly_chart(fig_topic, width="stretch")
         else:
             topic_df = pd.DataFrame()
             st.info("当前新闻表缺少可用主题字段，因此本页主要展示时段热度预测。")
@@ -1294,7 +1643,7 @@ def render_forecast(df_news: pd.DataFrame, df_period: pd.DataFrame):
             title="未来热度分层预估",
         )
         fig_regime.update_layout(height=320, margin=dict(l=10, r=10, t=50, b=10))
-        st.plotly_chart(fig_regime, use_container_width=True)
+        st.plotly_chart(fig_regime, width="stretch")
 
 def render_anomaly_alert(df_news: pd.DataFrame, df_period: pd.DataFrame):
     st.subheader("特异值预警")
@@ -1416,7 +1765,7 @@ def render_anomaly_alert(df_news: pd.DataFrame, df_period: pd.DataFrame):
             yaxis_title="点击量",
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         )
-        st.plotly_chart(fig_timeline, use_container_width=True)
+        st.plotly_chart(fig_timeline, width="stretch")
         st.caption("这张图适合回答：当前波动里，哪些时段已经明显偏离正常基线，值得重点关注。")
 
     with upper_right:
@@ -1434,7 +1783,7 @@ def render_anomaly_alert(df_news: pd.DataFrame, df_period: pd.DataFrame):
             )
             fig_news_alert.update_traces(texttemplate="%{text:.0f}", textposition="outside")
             fig_news_alert.update_layout(height=460, margin=dict(l=10, r=10, t=55, b=20))
-            st.plotly_chart(fig_news_alert, use_container_width=True)
+            st.plotly_chart(fig_news_alert, width="stretch")
         else:
             st.info("当前新闻表中未识别出显著异常热点，说明整体热度分布较平稳。")
 
@@ -1444,7 +1793,7 @@ def render_anomaly_alert(df_news: pd.DataFrame, df_period: pd.DataFrame):
             alert_table = period_alerts[["label", "value", "baseline", "gap", "zscore", "alert_type"]].copy()
             alert_table.columns = ["异常时段", "当前点击", "动态基线", "偏离值", "异常强度", "预警类型"]
             st.markdown("**预警明细**")
-            st.dataframe(alert_table.round(2), use_container_width=True, height=320)
+            st.dataframe(alert_table.round(2), width="stretch", height=320)
         else:
             st.markdown("**预警明细**")
             st.success("当前时段序列没有超过阈值的明显异常点。")
@@ -1505,7 +1854,7 @@ def render_llm_module(df_news: pd.DataFrame, df_period: pd.DataFrame):
         st.code(ctx, language="text")
 
         p0, p1, p2, p3 = st.columns(4)
-        if p0.button("测试连通性", use_container_width=True):
+        if p0.button("测试连通性", width="stretch"):
             if not api_key.strip():
                 st.session_state["llm_test_status"] = "请先填写可用的 DeepSeek API Key。"
             else:
@@ -1514,13 +1863,13 @@ def render_llm_module(df_news: pd.DataFrame, df_period: pd.DataFrame):
                     st.session_state["llm_test_status"] = f"连接成功：{result}"
                 except Exception as e:
                     st.session_state["llm_test_status"] = classify_llm_error(str(e))
-        if p1.button("热点解读", use_container_width=True):
+        if p1.button("热点解读", width="stretch"):
             st.session_state["llm_user_prompt"] = "请聚焦热点新闻，输出热点主题分布、最值得展示的新闻、以及可能的用户兴趣迁移。"
             st.rerun()
-        if p2.button("趋势研判", use_container_width=True):
+        if p2.button("趋势研判", width="stretch"):
             st.session_state["llm_user_prompt"] = "请聚焦流量趋势，判断接下来热度是继续上升、震荡还是回落，并给出展示建议。"
             st.rerun()
-        if p3.button("异常说明", use_container_width=True):
+        if p3.button("异常说明", width="stretch"):
             st.session_state["llm_user_prompt"] = "请聚焦异常预警，说明哪些时段和新闻最异常，并判断这些异常意味着什么。"
             st.rerun()
 
@@ -1532,7 +1881,7 @@ def render_llm_module(df_news: pd.DataFrame, df_period: pd.DataFrame):
 
     with right:
         st.markdown("**智能分析输出**")
-        run_analysis = st.button("生成大模型分析", type="primary", use_container_width=True)
+        run_analysis = st.button("生成大模型分析", type="primary", width="stretch")
         if run_analysis:
             if not api_key.strip():
                 st.error("请先填写可用的 DeepSeek API Key。")
@@ -1732,7 +2081,7 @@ def render_cluster(df_news: pd.DataFrame, df_period: pd.DataFrame):
                 }
             )
             .round(3),
-            use_container_width=True,
+            width="stretch",
             height=300,
         )
 
@@ -1749,7 +2098,7 @@ def render_cluster(df_news: pd.DataFrame, df_period: pd.DataFrame):
         )
         fig_cluster_bar.update_traces(textposition="outside")
         fig_cluster_bar.update_layout(height=340, margin=dict(l=10, r=10, t=55, b=10), coloraxis_colorbar_title="平均点击")
-        st.plotly_chart(fig_cluster_bar, use_container_width=True)
+        st.plotly_chart(fig_cluster_bar, width="stretch")
 
     with overview_right:
         fig_main = px.scatter_3d(
@@ -1790,7 +2139,7 @@ def render_cluster(df_news: pd.DataFrame, df_period: pd.DataFrame):
             ),
             legend_title_text="簇",
         )
-        st.plotly_chart(fig_main, use_container_width=True)
+        st.plotly_chart(fig_main, width="stretch")
 
     st.markdown("**簇内新闻构成**")
     comp_left, comp_right = st.columns([0.95, 0.69], vertical_alignment="top")
@@ -1807,7 +2156,7 @@ def render_cluster(df_news: pd.DataFrame, df_period: pd.DataFrame):
             title="簇 -> 新闻 构成树图（每簇展示 Top8）",
         )
         fig_treemap.update_layout(height=520, margin=dict(l=10, r=10, t=55, b=10))
-        st.plotly_chart(fig_treemap, use_container_width=True)
+        st.plotly_chart(fig_treemap, width="stretch")
 
     with comp_right:
         radar = stats.copy()
@@ -1828,7 +2177,7 @@ def render_cluster(df_news: pd.DataFrame, df_period: pd.DataFrame):
             margin=dict(l=10, r=10, t=55, b=10),
             polar=dict(radialaxis=dict(visible=True)),
         )
-        st.plotly_chart(fig_radar, use_container_width=True)
+        st.plotly_chart(fig_radar, width="stretch")
 
     st.markdown("**每个簇包含哪些新闻（直观名单）**")
     tab_names = [f"第 {int(c) + 1} 簇" for c in all_clusters]
@@ -1841,7 +2190,7 @@ def render_cluster(df_news: pd.DataFrame, df_period: pd.DataFrame):
                 cluster_size = cluster_size_map.get(c, 0)
                 st.caption(f"第 {int(c) + 1} 簇 | 新闻数 {int(cluster_size)} | 平均点击 {cluster_click:.2f}")
                 st.write("、".join(sub["新闻"].astype(str).head(24).tolist()))
-                st.dataframe(sub[["新闻", "总点击", "时段均值", "波动"]], use_container_width=True, height=280)
+                st.dataframe(sub[["新闻", "总点击", "时段均值", "波动"]], width="stretch", height=280)
             else:
                 st.info("该簇当前无样本。")
 
@@ -2074,7 +2423,7 @@ def render_assoc(df_news: pd.DataFrame, df_period: pd.DataFrame):
                 dict(x=0.88, y=1.06, text="联动主题", showarrow=False, font=dict(size=13, color="#334155")),
             ],
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     if not demo_assoc_mode:
         st.markdown("**数量相似关系总览**")
@@ -2142,7 +2491,7 @@ def render_assoc(df_news: pd.DataFrame, df_period: pd.DataFrame):
                     )
                     fig_groups.update_traces(textposition="outside")
                     fig_groups.update_layout(height=420, margin=dict(l=10, r=10, t=55, b=10), coloraxis_colorbar_title="节点数")
-                    st.plotly_chart(fig_groups, use_container_width=True)
+                    st.plotly_chart(fig_groups, width="stretch")
                 else:
                     st.info("当前数量值几乎都不重复，暂时没有形成明显的同值关系分组。")
 
@@ -2163,14 +2512,14 @@ def render_assoc(df_news: pd.DataFrame, df_period: pd.DataFrame):
                         title="同值关系热力矩阵",
                     )
                     fig_heat.update_layout(height=420, margin=dict(l=10, r=10, t=55, b=10))
-                    st.plotly_chart(fig_heat, use_container_width=True)
+                    st.plotly_chart(fig_heat, width="stretch")
                 else:
                     st.info("热力矩阵所需样本不足。")
 
             same_stats = linked_stats.head(12)
             if len(same_stats) > 0:
                 st.markdown("**同数量分组（可直接看哪些节点放在一起）**")
-                st.dataframe(same_stats.rename(columns={"value_key": "数量"}), use_container_width=True, height=320)
+                st.dataframe(same_stats.rename(columns={"value_key": "数量"}), width="stretch", height=320)
             else:
                 st.info("当前节点数量值几乎都不重复，网络连边较少。")
         else:
@@ -2267,7 +2616,7 @@ def render_assoc(df_news: pd.DataFrame, df_period: pd.DataFrame):
     st.markdown("**最终规则结论（Top 8）**")
     summary_df = rules.head(8)[["rule_name", "support", "confidence", "lift"]].copy()
     summary_df.columns = ["规则", "支持度", "置信度", "提升度"]
-    st.dataframe(summary_df.round(4), use_container_width=True, height=310)
+    st.dataframe(summary_df.round(4), width="stretch", height=310)
 
     st.markdown("**核心关联解读**")
     lead_left, lead_right = st.columns([1, 1], vertical_alignment="top")
@@ -2319,7 +2668,7 @@ def render_assoc(df_news: pd.DataFrame, df_period: pd.DataFrame):
         fig_matrix.add_hline(y=float(min_conf), line_dash="dash", line_color="#EF4444")
         fig_matrix.add_vline(x=float(min_support), line_dash="dash", line_color="#F97316")
         fig_matrix.update_layout(height=560, margin=dict(l=10, r=10, t=55, b=10), coloraxis_colorbar_title="提升度")
-        st.plotly_chart(fig_matrix, use_container_width=True)
+        st.plotly_chart(fig_matrix, width="stretch")
         st.caption("这张图适合回答：哪些规则不只是巧合，而是真正同时具备覆盖面、稳定性和解释力。")
 
     st.markdown("**规则强度排行榜**")
@@ -2336,7 +2685,7 @@ def render_assoc(df_news: pd.DataFrame, df_period: pd.DataFrame):
     )
     fig_rank.update_traces(texttemplate="%{text:.2f}", textposition="outside")
     fig_rank.update_layout(height=540, margin=dict(l=10, r=10, t=55, b=10), coloraxis_colorbar_title="置信度")
-    st.plotly_chart(fig_rank, use_container_width=True)
+    st.plotly_chart(fig_rank, width="stretch")
     if len(rules) > 0:
         top_rank = rules.iloc[0]
         st.write(
@@ -2349,7 +2698,7 @@ def render_assoc(df_news: pd.DataFrame, df_period: pd.DataFrame):
     st.markdown("**规则明细**")
     detail_df = rules[["antecedents_display", "consequents_display", "ant_theme", "cons_theme", "support", "confidence", "lift", "rule_text"]].copy()
     detail_df.columns = ["前件", "后件", "前件主题", "后件主题", "支持度", "置信度", "提升度", "解读"]
-    st.dataframe(detail_df.round(4), use_container_width=True, height=360)
+    st.dataframe(detail_df.round(4), width="stretch", height=360)
 
 
 def main():
@@ -2373,12 +2722,58 @@ def main():
         raw_view,
         llm_view,
     ]
+    view_meta = {
+        status_view: {
+            "desc": "面向交付和排障的链路自检页，快速判断 producer、Kafka、Flink、MySQL 到 Dashboard 是否形成闭环。",
+            "tags": ["链路自检", "运行状态", "排查入口"],
+        },
+        realtime_view: {
+            "desc": "展示新闻标题热度、点击排名和时段流量变化，适合作为演示大屏首页和实时运营观察窗口。",
+            "tags": ["实时榜单", "趋势波动", "运营总览"],
+        },
+        advanced_view: {
+            "desc": "通过多维图表强化热点结构、点击分布和主题表现，让业务方更快看懂数据背后的内容格局。",
+            "tags": ["多维图表", "结构分析", "可视化增强"],
+        },
+        forecast_view: {
+            "desc": "基于已有时段结果进行趋势预测和延续性判断，辅助判断热点是否仍有增长空间。",
+            "tags": ["趋势预测", "延续性", "热度研判"],
+        },
+        anomaly_view: {
+            "desc": "识别异常流量、突增突降和潜在波动风险，适合做数据质量和舆情风险提醒。",
+            "tags": ["异常检测", "风险提醒", "质量巡检"],
+        },
+        cluster_view: {
+            "desc": "把新闻标题按热度和内容特征聚合成簇，帮助理解当前热点版图和主题阵营。",
+            "tags": ["热点聚类", "主题画像", "内容分群"],
+        },
+        assoc_view: {
+            "desc": "挖掘热点之间的共现和联动关系，回答用户关注从哪里来、可能流向哪里。",
+            "tags": ["关联规则", "主题迁移", "联动发现"],
+        },
+        raw_view: {
+            "desc": "面向开发和验收的底层数据预览页，直接查看 MySQL 聚合表和字段识别结果。",
+            "tags": ["原始表", "字段识别", "验收检查"],
+        },
+        llm_view: {
+            "desc": "结合当前数据上下文生成热点解读、趋势研判和异常说明，适合形成汇报口径。",
+            "tags": ["智能解读", "报告辅助", "业务总结"],
+        },
+    }
 
-    st.title("News \u5b9e\u65f6\u53ef\u89c6\u5316\u4e0e\u667a\u80fd\u5206\u6790\u5927\u5c4f")
-    st.caption("\u8f6e\u8be2\u6570\u636e\u5e93\u5b9e\u65f6\u5237\u65b0 + \u805a\u7c7b\u5206\u6790 + \u5173\u8054\u89c4\u5219\u6316\u6398")
-    st.caption(f"\u7248\u672c: {APP_VERSION}")
+    inject_global_styles()
+    render_hero()
 
     with st.sidebar:
+        st.markdown(
+            """
+            <div class="sidebar-card">
+                <div class="sidebar-card-title">连接与控制台</div>
+                <div class="sidebar-card-desc">这里控制数据源、刷新频率和实时生成开关。按钮会给出即时反馈，便于课堂演示。</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         st.header("\u6570\u636e\u5e93\u8fde\u63a5")
         host = st.text_input("Host", value=DB_HOST)
         port = st.number_input("Port", min_value=1, max_value=65535, value=DB_PORT, step=1)
@@ -2392,11 +2787,19 @@ def main():
         limit = st.slider("\u5355\u8868\u6700\u5927\u8bfb\u53d6\u884c\u6570", 1000, 300000, 100000, 1000)
         st.divider()
         st.subheader("\u7cfb\u7edf\u542f\u52a8\u4e0e\u8865\u6570")
-        st.caption("\u811a\u672c\u542f\u52a8\u6574\u5957 Docker \u670d\u52a1\uff1b\u524d\u7aef\u6309\u94ae\u7528\u4e8e\u6570\u636e\u5e93\u4e3a\u7a7a\u65f6\u5feb\u901f\u5199\u5165\u6f14\u793a\u6570\u636e\u3002")
-        start_generation_clicked = st.button("\u542f\u52a8\u5b9e\u65f6\u751f\u6210", use_container_width=True)
-        pause_generation_clicked = st.button("\u6682\u505c\u5b9e\u65f6\u751f\u6210", use_container_width=True)
-        seed_clicked = st.button("\u8865\u5145\u6f14\u793a\u6570\u636e", use_container_width=True)
-        reset_seed_clicked = st.button("\u6e05\u7a7a\u5e76\u91cd\u7f6e\u6f14\u793a\u6570\u636e", use_container_width=True)
+        st.markdown(
+            """
+            <div class="sidebar-card">
+                <div class="sidebar-card-title">业务动作</div>
+                <div class="sidebar-card-desc">启动或暂停只写 MySQL 控制表，不直接执行 Docker 命令；更安全，也更适合给普通使用者操作。</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        start_generation_clicked = st.button("\u542f\u52a8\u5b9e\u65f6\u751f\u6210", width="stretch", type="primary")
+        pause_generation_clicked = st.button("\u6682\u505c\u5b9e\u65f6\u751f\u6210", width="stretch")
+        seed_clicked = st.button("\u8865\u5145\u6f14\u793a\u6570\u636e", width="stretch")
+        reset_seed_clicked = st.button("\u6e05\u7a7a\u5e76\u91cd\u7f6e\u6f14\u793a\u6570\u636e", width="stretch")
         st.caption("\u542f\u52a8/\u6682\u505c\u6309\u94ae\u53ea\u5199\u5165 MySQL \u63a7\u5236\u8868\uff0cproducer \u8bfb\u5230\u5f00\u5173\u540e\u624d\u4f1a\u5411 Kafka \u53d1\u9001\u65b0\u65e5\u5fd7\u3002")
         st.code("powershell -ExecutionPolicy Bypass -File scripts\\start.ps1", language="powershell")
 
@@ -2424,12 +2827,14 @@ def main():
         if start_generation_clicked or pause_generation_clicked:
             generation_enabled = bool(start_generation_clicked)
             set_generation_enabled(host, int(port), db, user, password, generation_enabled)
+            st.toast("\u5b9e\u65f6\u751f\u6210\u5df2\u542f\u52a8\uff0c\u6570\u636e\u5c06\u901a\u8fc7 Kafka/Flink \u5199\u5165 MySQL\u3002" if generation_enabled else "\u5b9e\u65f6\u751f\u6210\u5df2\u6682\u505c\uff0cproducer \u4f1a\u505c\u6b62\u53d1\u9001\u65b0\u65e5\u5fd7\u3002")
             st.success("\u5df2\u542f\u52a8\u5b9e\u65f6\u751f\u6210\u3002" if generation_enabled else "\u5df2\u6682\u505c\u5b9e\u65f6\u751f\u6210\u3002")
 
         generation_enabled = get_generation_enabled(host, int(port), db, user, password)
 
         if seed_clicked or reset_seed_clicked:
             news_rows, period_rows = seed_demo_data(host, int(port), db, user, password, reset=reset_seed_clicked)
+            st.toast("\u6f14\u793a\u6570\u636e\u5df2\u5237\u65b0\uff0c\u9875\u9762\u5373\u5c06\u91cd\u8f7d\u3002")
             st.success(f"\u5df2\u5199\u5165\u6f14\u793a\u6570\u636e\uff1a\u65b0\u95fb {news_rows} \u6761\uff0c\u65f6\u6bb5 {period_rows} \u6761\u3002")
             st.rerun()
 
@@ -2478,6 +2883,7 @@ def main():
 
     _, _, n_click, _ = infer_schema(df_news)
     _, _, p_click, _ = infer_schema(df_period)
+    render_ops_strip(st.session_state["active_view"], generation_enabled, auto, int(refresh_sec), using_mock)
     render_kpis(df_news, df_period, n_click, p_click)
 
     current_view = st.radio(
@@ -2487,36 +2893,35 @@ def main():
         horizontal=True,
         label_visibility="collapsed",
     )
+    if "last_view_for_feedback" not in st.session_state:
+        st.session_state["last_view_for_feedback"] = st.session_state["active_view"]
+    if current_view != st.session_state["last_view_for_feedback"]:
+        st.toast(f"\u5df2\u5207\u6362\u5230\uff1a{current_view}")
+        st.session_state["last_view_for_feedback"] = current_view
     st.session_state["active_view"] = current_view
     st.query_params["view"] = current_view
+    current_meta = view_meta.get(current_view, {"desc": "", "tags": []})
+    render_view_header(current_view, current_meta["desc"], current_meta["tags"])
 
     if current_view == status_view:
-        st.markdown(f"### {status_view}")
         render_system_status(df_news, df_period, news_table, period_table, using_mock, generation_enabled)
     elif current_view == realtime_view:
-        st.markdown(f"### {realtime_view}")
         render_realtime(df_news, df_period)
     elif current_view == advanced_view:
-        st.markdown(f"### {advanced_view}")
         render_advanced_visuals(df_news, df_period)
     elif current_view == forecast_view:
-        st.markdown(f"### {forecast_view}")
         render_forecast(df_news, df_period)
     elif current_view == anomaly_view:
-        st.markdown(f"### {anomaly_view}")
         render_anomaly_alert(df_news, df_period)
     elif current_view == cluster_view:
-        st.markdown(f"### {cluster_view}")
         render_cluster(df_news, df_period)
     elif current_view == assoc_view:
-        st.markdown(f"### {assoc_view}")
         render_assoc(df_news, df_period)
     elif current_view == raw_view:
-        st.markdown(f"### {raw_view}")
         st.write(f"\u65b0\u95fb\u8868: `{news_table}`")
-        st.dataframe(df_news.head(500), use_container_width=True)
+        st.dataframe(df_news.head(500), width="stretch")
         st.write(f"\u65f6\u6bb5\u8868: `{period_table}`")
-        st.dataframe(df_period.head(500), use_container_width=True)
+        st.dataframe(df_period.head(500), width="stretch")
         st.write("\u81ea\u52a8\u8bc6\u522b\u5b57\u6bb5:")
         st.json(
             {
@@ -2525,7 +2930,6 @@ def main():
             }
         )
     else:
-        st.markdown(f"### {llm_view}")
         render_llm_module(df_news, df_period)
 
 if __name__ == "__main__":
