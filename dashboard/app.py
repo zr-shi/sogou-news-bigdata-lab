@@ -29,41 +29,47 @@ def inject_global_styles() -> None:
         """
         <style>
         :root {
-            --news-bg: #f5f7fb;
-            --news-panel: rgba(255, 255, 255, 0.92);
+            --news-bg: #f7f9fc;
+            --news-panel: rgba(255, 255, 255, 0.94);
             --news-panel-strong: #ffffff;
-            --news-ink: #111827;
-            --news-muted: #6b7280;
-            --news-line: rgba(148, 163, 184, 0.26);
-            --news-blue: #2563eb;
-            --news-cyan: #0891b2;
+            --news-ink: #172033;
+            --news-muted: #667085;
+            --news-line: rgba(129, 140, 160, 0.22);
+            --news-blue: #4f7cff;
+            --news-cyan: #54b6d2;
             --news-red: #ef4444;
             --news-green: #10b981;
             --news-amber: #f59e0b;
-            --news-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
-            --news-shadow-soft: 0 10px 30px rgba(15, 23, 42, 0.06);
+            --news-shadow: 0 18px 45px rgba(28, 45, 88, 0.08);
+            --news-shadow-soft: 0 10px 30px rgba(28, 45, 88, 0.055);
         }
 
         .stApp {
             background:
-                radial-gradient(circle at 8% 2%, rgba(37, 99, 235, 0.10), transparent 30%),
-                radial-gradient(circle at 88% 8%, rgba(8, 145, 178, 0.10), transparent 28%),
-                linear-gradient(180deg, #f8fafc 0%, var(--news-bg) 42%, #eef2f7 100%);
+                radial-gradient(circle at 8% 2%, rgba(79, 124, 255, 0.08), transparent 30%),
+                radial-gradient(circle at 88% 8%, rgba(84, 182, 210, 0.08), transparent 28%),
+                linear-gradient(180deg, #fbfdff 0%, var(--news-bg) 45%, #f2f5fa 100%);
             color: var(--news-ink);
         }
 
         [data-testid="stSidebar"] {
             background:
-                linear-gradient(180deg, rgba(15, 23, 42, 0.98) 0%, rgba(30, 41, 59, 0.96) 100%);
-            border-right: 1px solid rgba(255,255,255,0.08);
+                linear-gradient(180deg, #f4f7fb 0%, #eef4fb 54%, #eaf1f8 100%);
+            border-right: 1px solid rgba(129, 140, 160, 0.18);
         }
         [data-testid="stSidebar"] * {
-            color: rgba(248, 250, 252, 0.92) !important;
+            color: #243044 !important;
         }
         [data-testid="stSidebar"] input,
         [data-testid="stSidebar"] textarea,
         [data-testid="stSidebar"] [data-baseweb="input"] {
-            color: #0f172a !important;
+            color: #172033 !important;
+            background-color: #ffffff !important;
+        }
+        [data-testid="stSidebar"] label,
+        [data-testid="stSidebar"] p,
+        [data-testid="stSidebar"] span {
+            color: #334155 !important;
         }
 
         .block-container {
@@ -80,7 +86,7 @@ def inject_global_styles() -> None:
             padding: 28px 30px;
             margin: 0 0 20px 0;
             background:
-                linear-gradient(135deg, rgba(15, 23, 42, 0.97) 0%, rgba(30, 64, 175, 0.94) 48%, rgba(8, 145, 178, 0.90) 100%);
+                linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(235, 242, 255, 0.96) 52%, rgba(226, 247, 252, 0.94) 100%);
             box-shadow: var(--news-shadow);
         }
         .news-hero:after {
@@ -90,17 +96,17 @@ def inject_global_styles() -> None:
             height: 380px;
             right: -130px;
             top: -160px;
-            background: radial-gradient(circle, rgba(255,255,255,0.20), transparent 62%);
+            background: radial-gradient(circle, rgba(79,124,255,0.13), transparent 62%);
         }
         .news-hero-kicker {
-            color: rgba(224, 242, 254, 0.88);
+            color: #58708f !important;
             font-size: 13px;
             letter-spacing: 0.16em;
             text-transform: uppercase;
             margin-bottom: 10px;
         }
         .news-hero-title {
-            color: #ffffff;
+            color: #15213a !important;
             font-size: clamp(34px, 4.1vw, 58px);
             line-height: 1.06;
             font-weight: 850;
@@ -108,7 +114,7 @@ def inject_global_styles() -> None:
             margin: 0;
         }
         .news-hero-subtitle {
-            color: rgba(241, 245, 249, 0.82);
+            color: #4f5f75 !important;
             max-width: 880px;
             font-size: 16px;
             line-height: 1.75;
@@ -126,9 +132,9 @@ def inject_global_styles() -> None:
             gap: 7px;
             padding: 7px 12px;
             border-radius: 999px;
-            border: 1px solid rgba(255,255,255,0.18);
-            background: rgba(255,255,255,0.10);
-            color: rgba(255,255,255,0.90);
+            border: 1px solid rgba(79, 124, 255, 0.18);
+            background: rgba(255,255,255,0.78);
+            color: #31425f !important;
             font-size: 13px;
             backdrop-filter: blur(10px);
         }
@@ -206,19 +212,43 @@ def inject_global_styles() -> None:
         .stButton > button {
             border-radius: 14px !important;
             border: 1px solid rgba(37, 99, 235, 0.18) !important;
-            background: linear-gradient(180deg, #ffffff, #f8fafc) !important;
+            background: linear-gradient(180deg, #ffffff, #f7faff) !important;
+            color: #172033 !important;
             box-shadow: 0 7px 16px rgba(15, 23, 42, 0.06) !important;
             transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, background 120ms ease !important;
             font-weight: 720 !important;
         }
+        .stButton > button * {
+            color: #172033 !important;
+        }
         .stButton > button:hover {
             transform: translateY(-1px);
             border-color: rgba(37, 99, 235, 0.38) !important;
-            box-shadow: 0 12px 24px rgba(37, 99, 235, 0.12) !important;
+            background: linear-gradient(180deg, #ffffff, #eef5ff) !important;
+            box-shadow: 0 12px 24px rgba(79, 124, 255, 0.12) !important;
         }
         .stButton > button:active {
             transform: translateY(1px) scale(0.99);
             box-shadow: 0 4px 10px rgba(15, 23, 42, 0.10) inset !important;
+        }
+        .stButton > button:disabled,
+        .stButton > button:disabled * {
+            color: #64748b !important;
+            background: #f1f5f9 !important;
+            border-color: rgba(148, 163, 184, 0.24) !important;
+            opacity: 0.82 !important;
+        }
+        [data-testid="stSidebar"] .stButton > button {
+            background: linear-gradient(180deg, #ffffff, #f8fbff) !important;
+            color: #172033 !important;
+            border-color: rgba(79, 124, 255, 0.20) !important;
+        }
+        [data-testid="stSidebar"] .stButton > button * {
+            color: #172033 !important;
+        }
+        [data-testid="stSidebar"] .stButton > button:disabled,
+        [data-testid="stSidebar"] .stButton > button:disabled * {
+            color: #64748b !important;
         }
 
         div[role="radiogroup"] {
@@ -266,19 +296,21 @@ def inject_global_styles() -> None:
         }
 
         .sidebar-card {
-            border: 1px solid rgba(255,255,255,0.12);
+            border: 1px solid rgba(129, 140, 160, 0.18);
             border-radius: 18px;
             padding: 12px 14px;
-            background: rgba(255,255,255,0.07);
+            background: rgba(255,255,255,0.68);
             margin-bottom: 14px;
+            box-shadow: 0 10px 24px rgba(28,45,88,0.055);
         }
         .sidebar-card-title {
+            color: #172033 !important;
             font-weight: 800;
             font-size: 15px;
             margin-bottom: 6px;
         }
         .sidebar-card-desc {
-            color: rgba(226,232,240,0.76) !important;
+            color: #667085 !important;
             font-size: 12px;
             line-height: 1.65;
         }
