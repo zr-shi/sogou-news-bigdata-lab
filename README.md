@@ -85,6 +85,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1 -NoPull -RestartFli
 powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1 -NoSeedFallback
 ```
 
+默认配置下 producer 会保持暂停，所以启动脚本不会长时间等待实时数据增长；需要增长时进入 Dashboard 左侧点击“启动实时生成”。如果 Kafka 在 Docker Desktop 异常重启后因为 ZooKeeper 残留会话启动失败，启动脚本会自动重启 ZooKeeper/Kafka 再继续。
+
 ### macOS / Linux
 
 ```bash
@@ -130,6 +132,12 @@ Kafka 默认端口：`9092`
 4. 点击“暂停实时生成”后，producer 会停止向 Kafka 发送新日志。
 
 按钮不会直接执行 Docker 命令，而是写入 MySQL 的 `producer_control` 表。producer 每隔几秒读取这个开关，只有开关开启时才生成数据。
+
+为避免重新开机或重启容器后自动增长，producer 默认会在启动时把开关恢复为暂停状态。若确实希望重启后沿用上一次开关，可在 `.env` 中设置：
+
+```env
+PRODUCER_RESET_CONTROL_ON_START=false
+```
 
 标题池默认不封顶：
 

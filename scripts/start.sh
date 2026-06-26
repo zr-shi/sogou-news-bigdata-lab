@@ -61,8 +61,9 @@ wait_kafka_healthy() {
       return 0
     fi
     if [ "$attempt" -le 3 ]; then
-      echo "Kafka is not healthy yet ($state); retrying startup after ZooKeeper session cleanup..."
+      echo "Kafka is not healthy yet ($state); restarting ZooKeeper/Kafka to clear stale broker session..."
       sleep 10
+      docker compose restart zookeeper
       docker compose up -d --no-build kafka
       attempt=$((attempt + 1))
     else
@@ -71,6 +72,28 @@ wait_kafka_healthy() {
   done
   echo "Kafka is not healthy after ${seconds}s" >&2
   return 1
+}
+
+env_value() {
+  name="$1"
+  default="$2"
+  if [ ! -f .env ]; then
+    printf '%s' "$default"
+    return
+  fi
+  value="$(awk -F= -v key="$name" '$1 ~ "^[[:space:]]*" key "[[:space:]]*$" { value=$2 } END { print value }' .env)"
+  if [ -z "$value" ]; then
+    printf '%s' "$default"
+  else
+    printf '%s' "$value" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+  fi
+}
+
+is_truthy() {
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 running_flink_job() {
@@ -120,10 +143,24 @@ else
   docker compose up -d --no-build --force-recreate flink-job
 fi
 
-deadline=$(( $(date +%s) + 120 ))
 has_data=0
-while [ "$(date +%s)" -lt "$deadline" ]; do
-  sleep 5
+if is_truthy "$(env_value PRODUCER_START_ENABLED false)"; then
+  deadline=$(( $(date +%s) + 120 ))
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    sleep 5
+    counts="$(get_db_counts || true)"
+    echo "$counts" | paste -sd ', ' -
+    news="$(printf '%s\n' "$counts" | awk -F= '/^newscount=/{print $2; exit}')"
+    period="$(printf '%s\n' "$counts" | awk -F= '/^periodcount=/{print $2; exit}')"
+    news="${news:-0}"
+    period="${period:-0}"
+    if [ "$news" -gt 0 ] && [ "$period" -gt 0 ]; then
+      has_data=1
+      break
+    fi
+  done
+else
+  echo "Producer starts paused; skipping long data-growth wait. Use the dashboard button to start realtime generation."
   counts="$(get_db_counts || true)"
   echo "$counts" | paste -sd ', ' -
   news="$(printf '%s\n' "$counts" | awk -F= '/^newscount=/{print $2; exit}')"
@@ -132,9 +169,8 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   period="${period:-0}"
   if [ "$news" -gt 0 ] && [ "$period" -gt 0 ]; then
     has_data=1
-    break
   fi
-done
+fi
 
 if [ "$has_data" -eq 0 ] && [ "$NO_SEED_FALLBACK" -eq 0 ]; then
   echo "No database rows detected; seeding demo data so the dashboard can start cleanly."

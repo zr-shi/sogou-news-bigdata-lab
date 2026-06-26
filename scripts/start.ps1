@@ -41,8 +41,9 @@ function Wait-KafkaHealthy($Seconds = 120) {
             return
         }
         if ($attempt -le 3) {
-            Write-Host "Kafka is not healthy yet ($state); retrying startup after ZooKeeper session cleanup..."
+            Write-Host "Kafka is not healthy yet ($state); restarting ZooKeeper/Kafka to clear stale broker session..."
             Start-Sleep -Seconds 10
+            docker compose restart zookeeper
             docker compose up -d --no-build kafka
             $attempt += 1
         } else {
@@ -50,6 +51,21 @@ function Wait-KafkaHealthy($Seconds = 120) {
         }
     }
     throw "Kafka is not healthy after $Seconds seconds"
+}
+
+function Get-ComposeEnvValue($Name, $Default) {
+    if (-not (Test-Path ".env")) {
+        return $Default
+    }
+    $line = Get-Content ".env" | Where-Object { $_ -match "^\s*$([Regex]::Escape($Name))\s*=" } | Select-Object -Last 1
+    if (-not $line) {
+        return $Default
+    }
+    return (($line -split "=", 2)[1]).Trim()
+}
+
+function Test-Truthy($Value) {
+    return @("1", "true", "yes", "on") -contains $Value.ToString().Trim().ToLowerInvariant()
 }
 
 function Get-DbCounts {
@@ -106,18 +122,29 @@ if ($runningJobs.Count -gt 0 -and -not $RestartFlinkJob) {
     docker compose up -d --no-build --force-recreate flink-job
 }
 
-$deadline = (Get-Date).AddSeconds(120)
 $hasData = $false
-while ((Get-Date) -lt $deadline) {
-    Start-Sleep -Seconds 5
+$producerStartsEnabled = Test-Truthy (Get-ComposeEnvValue "PRODUCER_START_ENABLED" "false")
+
+if ($producerStartsEnabled) {
+    $deadline = (Get-Date).AddSeconds(120)
+    while ((Get-Date) -lt $deadline) {
+        Start-Sleep -Seconds 5
+        $counts = @(Get-DbCounts)
+        Write-Host ($counts -join ", ")
+        $news = [int](($counts | Where-Object { $_ -like "newscount=*" }) -replace "newscount=", "")
+        $period = [int](($counts | Where-Object { $_ -like "periodcount=*" }) -replace "periodcount=", "")
+        if ($news -gt 0 -and $period -gt 0) {
+            $hasData = $true
+            break
+        }
+    }
+} else {
+    Write-Host "Producer starts paused; skipping long data-growth wait. Use the dashboard button to start realtime generation."
     $counts = @(Get-DbCounts)
     Write-Host ($counts -join ", ")
     $news = [int](($counts | Where-Object { $_ -like "newscount=*" }) -replace "newscount=", "")
     $period = [int](($counts | Where-Object { $_ -like "periodcount=*" }) -replace "periodcount=", "")
-    if ($news -gt 0 -and $period -gt 0) {
-        $hasData = $true
-        break
-    }
+    $hasData = ($news -gt 0 -and $period -gt 0)
 }
 
 if (-not $hasData -and -not $NoSeedFallback) {

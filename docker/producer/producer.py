@@ -27,6 +27,7 @@ CONTROL_ENABLED = os.getenv("PRODUCER_CONTROL_ENABLED", "true").strip().lower() 
 START_ENABLED = os.getenv("PRODUCER_START_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
 CONTROL_POLL_SECONDS = max(1.0, float(os.getenv("PRODUCER_CONTROL_POLL_SECONDS", "2")))
 CONTROL_TABLE = os.getenv("PRODUCER_CONTROL_TABLE", "producer_control")
+RESET_CONTROL_ON_START = os.getenv("PRODUCER_RESET_CONTROL_ON_START", "true").strip().lower() not in {"0", "false", "no", "off"}
 CONTROL_KEY = "generation_enabled"
 _last_control_poll = 0.0
 _cached_generation_enabled = START_ENABLED
@@ -151,6 +152,27 @@ def ensure_control_table(conn) -> None:
         )
 
 
+def set_initial_generation_state() -> None:
+    if not CONTROL_ENABLED or not RESET_CONTROL_ON_START:
+        return
+
+    try:
+        with mysql_conn() as conn:
+            ensure_control_table(conn)
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    INSERT INTO {CONTROL_TABLE}(control_key, control_value)
+                    VALUES (%s, %s)
+                    ON DUPLICATE KEY UPDATE control_value = VALUES(control_value)
+                    """,
+                    (CONTROL_KEY, "1" if START_ENABLED else "0"),
+                )
+        print(f"Producer control reset on start: {CONTROL_KEY}={1 if START_ENABLED else 0}")
+    except Exception as exc:
+        print(f"Producer control reset failed: {exc}")
+
+
 def generation_enabled() -> bool:
     global _last_control_poll, _cached_generation_enabled
 
@@ -202,8 +224,10 @@ def main() -> None:
         f"Producing to {TOPIC}; mode={mode}; source rows={len(lines)}; "
         f"dynamic_titles={DYNAMIC_TITLES}; unique_every={UNIQUE_EVERY}; pool={TOPIC_POOL_SIZE}; "
         f"run_label={RUN_LABEL if INCLUDE_RUN_LABEL else 'off'}; "
-        f"control_enabled={CONTROL_ENABLED}; start_enabled={START_ENABLED}"
+        f"control_enabled={CONTROL_ENABLED}; start_enabled={START_ENABLED}; "
+        f"reset_control_on_start={RESET_CONTROL_ON_START}"
     )
+    set_initial_generation_state()
     last_wait_log = 0.0
     while True:
         if not generation_enabled():
